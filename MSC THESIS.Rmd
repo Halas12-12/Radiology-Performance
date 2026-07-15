@@ -1,0 +1,3381 @@
+---
+title: "MSC THESIS"
+author: "ASSOUMA ALASSANE Hariph"
+date: "2026-03-15"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# ============================================================
+# MSC THESIS — ANALYSE DESCRIPTIVE ORGANISEE
+# BASE UNIQUE : DATA.xlsx
+# ============================================================
+
+rm(list = ls())
+graphics.off()
+
+# ================================
+# 0. PACKAGES
+# ================================
+
+packages <- c(
+  "readxl",
+  "dplyr",
+  "tidyr",
+  "lubridate",
+  "ggplot2",
+  "fixest",
+  "modelsummary",
+  "skimr",
+  "knitr",
+  "openxlsx",
+  "janitor"
+)
+
+installed_packages <- packages %in% rownames(installed.packages())
+
+if (any(installed_packages == FALSE)) {
+  install.packages(packages[!installed_packages])
+}
+
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(lubridate)
+library(ggplot2)
+library(fixest)
+library(modelsummary)
+library(skimr)
+library(knitr)
+library(openxlsx)
+library(janitor)
+library(gt)
+library(tibble)
+library(readr)
+```
+
+
+
+
+
+
+```{r}
+# ================================
+# 1. CHEMINS
+# ================================
+
+data_path <- "C:/Users/HP/OneDrive/Bureau/HALAS MSC THESIS/Rstudio/AE/Traiter/DATA.xlsx"
+
+output_path <- "C:/Users/HP/OneDrive/Bureau/HALAS MSC THESIS/Work evolution/outputs"
+
+dir.create(output_path, showWarnings = FALSE, recursive = TRUE)
+
+dir.create(file.path(output_path, "plots"), showWarnings = FALSE, recursive = TRUE)
+dir.create(file.path(output_path, "plots", "univarie"), showWarnings = FALSE, recursive = TRUE)
+dir.create(file.path(output_path, "plots", "bivarie"), showWarnings = FALSE, recursive = TRUE)
+dir.create(file.path(output_path, "plots", "multivarie"), showWarnings = FALSE, recursive = TRUE)
+
+dir.create(file.path(output_path, "tables_pretty"), showWarnings = FALSE, recursive = TRUE)
+dir.create(file.path(output_path, "tables_pretty", "univarie"), showWarnings = FALSE, recursive = TRUE)
+dir.create(file.path(output_path, "tables_pretty", "bivarie"), showWarnings = FALSE, recursive = TRUE)
+dir.create(file.path(output_path, "tables_pretty", "multivarie"), showWarnings = FALSE, recursive = TRUE)
+
+dir.create(file.path(output_path, "logs"), showWarnings = FALSE, recursive = TRUE)
+```
+
+
+
+
+```{r}
+# ================================
+# 2. IMPORT DE DATA
+# ================================
+
+DATA <- read_excel(data_path, sheet = "DATA") %>%
+  clean_names()
+
+# Vérification rapide
+str(DATA)
+head(DATA)
+
+# ================================
+# 3. SECURISATION DES TYPES
+# ================================
+
+DATA <- DATA %>%
+  mutate(
+    date = as.Date(date),
+    annee = as.integer(annee),
+    mois = as.integer(mois),
+    site = as.factor(site),
+    type_dexamen = as.factor(type_dexamen),
+    groupe_eml = as.factor(groupe_eml),
+    
+    avec_eml = as.numeric(avec_eml),
+    greve = as.numeric(greve),
+    post_eml = as.numeric(post_eml),
+    did_eml = as.numeric(did_eml),
+    interaction_eml_greve = as.numeric(interaction_eml_greve),
+    type_coupe = as.numeric(type_coupe),
+    type_conventionnel = as.numeric(type_conventionnel),
+    flag_ligne_suspecte = as.numeric(flag_ligne_suspecte)
+  )
+```
+
+
+```{r}
+# ============================================================
+# AJOUT DE L'ENTITE A PARTIR DU SITE
+# ============================================================
+
+library(dplyr)
+
+mapping_site_entite <- tibble::tribble(
+  ~site, ~entite,
+  "Doullens Hôpital", "CIM DOULLENS",
+  "Doullens", "CIM DOULLENS",
+  "Arras Hôpital", "CIM DOULLENS",
+  "Blois Polyclinique", "IMCL41",
+  "Noyers-sur-Cher", "IMCL41",
+  "Saint-Gervais", "IMCL41",
+  "Le Havre Paul Souday", "NORA IMAGERIE",
+  "Criquebœuf Côte Fleurie", "NORA IMAGERIE",
+  "Le Havre HPE", "NORA IMAGERIE",
+  "Le Havre Ormeaux", "NORA IMAGERIE",
+  "Le Havre Centre", "NORA IMAGERIE",
+  "Lisieux", "NORA IMAGERIE",
+  "Deauville", "NORA IMAGERIE",
+  "Honfleur", "NORA IMAGERIE",
+  "Le Havre Verdun", "NORA IMAGERIE",
+  "Lisieux Polyclinique", "NORA IMAGERIE",
+  "Montivilliers", "NORA IMAGERIE",
+  "Saint-Lô", "NORA IMAGERIE",
+  "La Roche-sur-Yon Clinique Saint Charles", "RAD'YON",
+  "Les Herbiers", "RAD'YON",
+  "La Roche-sur-Yon Les Bazinières", "RAD'YON"
+)
+
+DATA <- DATA %>%
+  left_join(mapping_site_entite, by = "site")
+
+# Vérification rapide
+DATA %>%
+  distinct(site, entite) %>%
+  arrange(entite, site)
+```
+
+```{r}
+# ============================================================
+# SECTION B — ANALYSE UNIVARIEE
+# ============================================================
+
+# ================================
+# B1. Description générale du panel
+# ================================
+
+description_panel <- tibble(
+  nombre_sites = n_distinct(DATA$site),
+  nombre_entites = n_distinct(DATA$entite),
+  periode_debut = min(DATA$date, na.rm = TRUE),
+  periode_fin = max(DATA$date, na.rm = TRUE),
+  nombre_observations = nrow(DATA),
+  nombre_types_examen = n_distinct(DATA$type_dexamen)
+)
+
+tab_panel <- description_panel %>%
+  gt() %>%
+  tab_header(
+    title = "Description générale du panel",
+    subtitle = "Structure générale de la base HALAS"
+  )
+
+gtsave(tab_panel, file.path(output_path, "tables_pretty", "univarie", "U01_description_generale_panel.html"))
+write.xlsx(description_panel, file.path(output_path, "tables_pretty", "univarie", "U01_description_generale_panel.xlsx"), overwrite = TRUE)
+write_csv(description_panel, file.path(output_path, "tables_pretty", "univarie", "U01_description_generale_panel.csv"))
+
+# ================================
+# B2. Statistiques descriptives globales
+# ================================
+
+vars_quantitatives <- c(
+  "chiffre_daffaire",
+  "honoraires",
+  "nombre_d_examens",
+  "log_chiffre_daffaire",
+  "log_honoraires",
+  "log_nombre_d_examens",
+  "jours_douverture"
+)
+
+stats_quant_global <- DATA %>%
+  select(all_of(vars_quantitatives)) %>%
+  summarise(
+    across(
+      everything(),
+      list(
+        moyenne = ~ mean(.x, na.rm = TRUE),
+        ecart_type = ~ sd(.x, na.rm = TRUE),
+        minimum = ~ min(.x, na.rm = TRUE),
+        q1 = ~ quantile(.x, 0.25, na.rm = TRUE),
+        mediane = ~ median(.x, na.rm = TRUE),
+        q3 = ~ quantile(.x, 0.75, na.rm = TRUE),
+        maximum = ~ max(.x, na.rm = TRUE),
+        n = ~ sum(!is.na(.x))
+      ),
+      .names = "{.col}_{.fn}"
+    )
+  ) %>%
+  pivot_longer(
+    cols = everything(),
+    names_to = c("variable", "statistique"),
+    names_pattern = "(.+)_(moyenne|ecart_type|minimum|q1|mediane|q3|maximum|n)",
+    values_to = "valeur"
+  ) %>%
+  pivot_wider(names_from = statistique, values_from = valeur) %>%
+  mutate(across(where(is.numeric), ~ round(.x, 2)))
+
+tab_stats_quant <- stats_quant_global %>%
+  gt() %>%
+  tab_header(
+    title = "Statistiques descriptives globales",
+    subtitle = "Variables de performance et de contrôle"
+  )
+
+gtsave(tab_stats_quant, file.path(output_path, "tables_pretty", "univarie", "U02_statistiques_quantitatives_globales.html"))
+write.xlsx(stats_quant_global, file.path(output_path, "tables_pretty", "univarie", "U02_statistiques_quantitatives_globales.xlsx"), overwrite = TRUE)
+write_csv(stats_quant_global, file.path(output_path, "tables_pretty", "univarie", "U02_statistiques_quantitatives_globales.csv"))
+
+# ================================
+# B3. Répartition des sites par entité
+# ================================
+
+repartition_sites_entite <- DATA %>%
+  distinct(entite, site) %>%
+  count(entite, name = "nombre_sites") %>%
+  mutate(pourcentage = round(nombre_sites / sum(nombre_sites) * 100, 2))
+
+tab_sites_entite <- repartition_sites_entite %>%
+  gt() %>%
+  tab_header(
+    title = "Répartition des sites par entité",
+    subtitle = "Structure organisationnelle du panel"
+  )
+
+gtsave(tab_sites_entite, file.path(output_path, "tables_pretty", "univarie", "U03_repartition_sites_par_entite.html"))
+write.xlsx(repartition_sites_entite, file.path(output_path, "tables_pretty", "univarie", "U03_repartition_sites_par_entite.xlsx"), overwrite = TRUE)
+write_csv(repartition_sites_entite, file.path(output_path, "tables_pretty", "univarie", "U03_repartition_sites_par_entite.csv"))
+
+graph_sites_entite <- ggplot(repartition_sites_entite, aes(x = reorder(entite, nombre_sites), y = nombre_sites, fill = entite)) +
+  geom_col(width = 0.7) +
+  geom_text(aes(label = nombre_sites), hjust = -0.2) +
+  coord_flip() +
+  labs(
+    title = "Répartition des sites par entité",
+    x = "Entité",
+    y = "Nombre de sites"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "none")
+
+ggsave(file.path(output_path, "plots", "univarie", "U03_repartition_sites_par_entite.png"),
+       graph_sites_entite, width = 8, height = 5, dpi = 300)
+
+# ================================
+# B4. Répartition selon la présence d'un EML
+# ================================
+
+repartition_eml <- DATA %>%
+  count(avec_eml) %>%
+  mutate(
+    statut_eml = ifelse(avec_eml == 1, "Avec EML", "Sans EML"),
+    pourcentage = round(n / sum(n) * 100, 2)
+  ) %>%
+  select(statut_eml, n, pourcentage)
+
+tab_repartition_eml <- repartition_eml %>%
+  gt() %>%
+  tab_header(
+    title = "Répartition des observations selon la présence d'un EML",
+    subtitle = "Variable de traitement technologique"
+  )
+
+gtsave(tab_repartition_eml, file.path(output_path, "tables_pretty", "univarie", "U04_repartition_eml.html"))
+write.xlsx(repartition_eml, file.path(output_path, "tables_pretty", "univarie", "U04_repartition_eml.xlsx"), overwrite = TRUE)
+write_csv(repartition_eml, file.path(output_path, "tables_pretty", "univarie", "U04_repartition_eml.csv"))
+
+graph_repartition_eml <- ggplot(repartition_eml, aes(x = statut_eml, y = n, fill = statut_eml)) +
+  geom_col(width = 0.6) +
+  geom_text(aes(label = n), vjust = -0.4) +
+  labs(
+    title = "Répartition des observations selon la présence d'un EML",
+    x = "",
+    y = "Nombre d'observations"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "none")
+
+ggsave(file.path(output_path, "plots", "univarie", "U04_repartition_eml.png"),
+       graph_repartition_eml, width = 7, height = 5, dpi = 300)
+
+# ================================
+# B5. Répartition selon les périodes de grève
+# ================================
+
+repartition_greve <- DATA %>%
+  count(greve) %>%
+  mutate(
+    statut_greve = ifelse(greve == 1, "Mois de grève", "Hors grève"),
+    pourcentage = round(n / sum(n) * 100, 2)
+  ) %>%
+  select(statut_greve, n, pourcentage)
+
+tab_repartition_greve <- repartition_greve %>%
+  gt() %>%
+  tab_header(
+    title = "Répartition des observations selon les périodes de grève",
+    subtitle = "Variable de choc organisationnel"
+  )
+
+gtsave(tab_repartition_greve, file.path(output_path, "tables_pretty", "univarie", "U05_repartition_greve.html"))
+write.xlsx(repartition_greve, file.path(output_path, "tables_pretty", "univarie", "U05_repartition_greve.xlsx"), overwrite = TRUE)
+write_csv(repartition_greve, file.path(output_path, "tables_pretty", "univarie", "U05_repartition_greve.csv"))
+
+graph_repartition_greve <- ggplot(repartition_greve, aes(x = statut_greve, y = n, fill = statut_greve)) +
+  geom_col(width = 0.6) +
+  geom_text(aes(label = n), vjust = -0.4) +
+  labs(
+    title = "Répartition des observations selon les périodes de grève",
+    x = "",
+    y = "Nombre d'observations"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "none")
+
+ggsave(file.path(output_path, "plots", "univarie", "U05_repartition_greve.png"),
+       graph_repartition_greve, width = 7, height = 5, dpi = 300)
+
+# ================================
+# B6. Répartition par type d'examen
+# ================================
+
+repartition_type_examen <- DATA %>%
+  count(type_dexamen) %>%
+  mutate(pourcentage = round(n / sum(n) * 100, 2))
+
+tab_repartition_type <- repartition_type_examen %>%
+  gt() %>%
+  tab_header(
+    title = "Répartition des observations par type d'examen",
+    subtitle = "Coupe versus conventionnel"
+  )
+
+gtsave(tab_repartition_type, file.path(output_path, "tables_pretty", "univarie", "U06_repartition_type_examen.html"))
+write.xlsx(repartition_type_examen, file.path(output_path, "tables_pretty", "univarie", "U06_repartition_type_examen.xlsx"), overwrite = TRUE)
+write_csv(repartition_type_examen, file.path(output_path, "tables_pretty", "univarie", "U06_repartition_type_examen.csv"))
+
+graph_repartition_type <- ggplot(repartition_type_examen, aes(x = type_dexamen, y = n, fill = type_dexamen)) +
+  geom_col(width = 0.6) +
+  geom_text(aes(label = n), vjust = -0.4) +
+  labs(
+    title = "Répartition des observations par type d'examen",
+    x = "Type d'examen",
+    y = "Nombre d'observations"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "none")
+
+ggsave(file.path(output_path, "plots", "univarie", "U06_repartition_type_examen.png"),
+       graph_repartition_type, width = 7, height = 5, dpi = 300)
+
+# ================================
+# B7. Histogrammes des variables de performance
+# ================================
+
+variables_hist <- c("nombre_d_examens", "chiffre_daffaire", "honoraires")
+
+for (var in variables_hist) {
+  
+  p <- ggplot(DATA, aes(x = .data[[var]])) +
+    geom_histogram(aes(y = after_stat(density)), bins = 30, fill = "steelblue", alpha = 0.7) +
+    geom_density(color = "red", linewidth = 1) +
+    labs(
+      title = paste("Distribution de", var),
+      x = var,
+      y = "Densité"
+    ) +
+    theme_minimal(base_size = 13)
+  
+  ggsave(
+    file.path(output_path, "plots", "univarie", paste0("U07_histogramme_", var, ".png")),
+    p,
+    width = 8,
+    height = 5,
+    dpi = 300
+  )
+}
+
+# ================================
+# B8. Boxplots par entité
+# ================================
+
+vars_box <- c("nombre_d_examens", "chiffre_daffaire", "honoraires")
+
+for (var in vars_box) {
+  
+  p <- ggplot(DATA, aes(x = entite, y = .data[[var]], fill = entite)) +
+    geom_boxplot(outlier.alpha = 0.4) +
+    coord_flip() +
+    labs(
+      title = paste("Distribution de", var, "par entité"),
+      x = "Entité",
+      y = var
+    ) +
+    theme_minimal(base_size = 13) +
+    theme(legend.position = "none")
+  
+  ggsave(
+    file.path(output_path, "plots", "univarie", paste0("U08_boxplot_entite_", var, ".png")),
+    p,
+    width = 9,
+    height = 6,
+    dpi = 300
+  )
+}
+```
+
+
+
+
+
+
+
+
+
+```{r}
+# ============================================================
+# SECTION C — ANALYSE BIVARIEE
+# ============================================================
+
+# ================================
+# C1. Performance moyenne par entité
+# ================================
+
+stats_entite <- DATA %>%
+  group_by(entite) %>%
+  summarise(
+    examens_moyens = mean(nombre_d_examens, na.rm = TRUE),
+    ca_moyen = mean(chiffre_daffaire, na.rm = TRUE),
+    honoraires_moyens = mean(honoraires, na.rm = TRUE),
+    jours_ouverture_moyens = mean(jours_douverture, na.rm = TRUE),
+    n = n(),
+    .groups = "drop"
+  ) %>%
+  mutate(across(where(is.numeric), ~ round(.x, 2)))
+
+tab_stats_entite <- stats_entite %>%
+  gt() %>%
+  tab_header(
+    title = "Performance moyenne par entité",
+    subtitle = "Activité, chiffre d'affaires et honoraires"
+  )
+
+gtsave(tab_stats_entite, file.path(output_path, "tables_pretty", "bivarie", "B01_performance_moyenne_par_entite.html"))
+write.xlsx(stats_entite, file.path(output_path, "tables_pretty", "bivarie", "B01_performance_moyenne_par_entite.xlsx"), overwrite = TRUE)
+write_csv(stats_entite, file.path(output_path, "tables_pretty", "bivarie", "B01_performance_moyenne_par_entite.csv"))
+
+# ================================
+# C2. Performance moyenne par site
+# ================================
+
+stats_site <- DATA %>%
+  group_by(entite, site) %>%
+  summarise(
+    examens_moyens = mean(nombre_d_examens, na.rm = TRUE),
+    ca_moyen = mean(chiffre_daffaire, na.rm = TRUE),
+    honoraires_moyens = mean(honoraires, na.rm = TRUE),
+    jours_ouverture_moyens = mean(jours_douverture, na.rm = TRUE),
+    n = n(),
+    .groups = "drop"
+  ) %>%
+  arrange(entite, desc(examens_moyens)) %>%
+  mutate(across(where(is.numeric), ~ round(.x, 2)))
+
+tab_stats_site <- stats_site %>%
+  gt() %>%
+  tab_header(
+    title = "Performance moyenne par site",
+    subtitle = "Sites classés par entité"
+  )
+
+gtsave(tab_stats_site, file.path(output_path, "tables_pretty", "bivarie", "B02_performance_moyenne_par_site.html"))
+write.xlsx(stats_site, file.path(output_path, "tables_pretty", "bivarie", "B02_performance_moyenne_par_site.xlsx"), overwrite = TRUE)
+write_csv(stats_site, file.path(output_path, "tables_pretty", "bivarie", "B02_performance_moyenne_par_site.csv"))
+
+# ================================
+# C3. Relation examens / chiffre d'affaires
+# ================================
+
+graph_examens_ca <- ggplot(DATA, aes(x = nombre_d_examens, y = chiffre_daffaire, color = factor(avec_eml))) +
+  geom_point(alpha = 0.45) +
+  geom_smooth(method = "lm", se = FALSE, color = "black") +
+  labs(
+    title = "Relation entre nombre d'examens et chiffre d'affaires",
+    subtitle = "Couleur selon la présence d'un EML",
+    x = "Nombre d'examens",
+    y = "Chiffre d'affaires",
+    color = "EML"
+  ) +
+  theme_minimal(base_size = 13)
+
+ggsave(file.path(output_path, "plots", "bivarie", "B03_relation_examens_chiffre_affaires.png"),
+       graph_examens_ca, width = 8, height = 5, dpi = 300)
+
+# ================================
+# C4. Relation examens / honoraires
+# ================================
+
+graph_examens_honoraires <- ggplot(DATA, aes(x = nombre_d_examens, y = honoraires, color = factor(avec_eml))) +
+  geom_point(alpha = 0.45) +
+  geom_smooth(method = "lm", se = FALSE, color = "black") +
+  labs(
+    title = "Relation entre nombre d'examens et honoraires",
+    subtitle = "Couleur selon la présence d'un EML",
+    x = "Nombre d'examens",
+    y = "Honoraires",
+    color = "EML"
+  ) +
+  theme_minimal(base_size = 13)
+
+ggsave(file.path(output_path, "plots", "bivarie", "B04_relation_examens_honoraires.png"),
+       graph_examens_honoraires, width = 8, height = 5, dpi = 300)
+
+# ================================
+# C5. Comparaison descriptive EML / sans EML
+# ================================
+
+stats_eml <- DATA %>%
+  group_by(avec_eml) %>%
+  summarise(
+    examens_moyens = mean(nombre_d_examens, na.rm = TRUE),
+    ca_moyen = mean(chiffre_daffaire, na.rm = TRUE),
+    honoraires_moyens = mean(honoraires, na.rm = TRUE),
+    n = n(),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    statut_eml = ifelse(avec_eml == 1, "Avec EML", "Sans EML"),
+    across(where(is.numeric), ~ round(.x, 2))
+  ) %>%
+  select(statut_eml, examens_moyens, ca_moyen, honoraires_moyens, n)
+
+tab_stats_eml <- stats_eml %>%
+  gt() %>%
+  tab_header(
+    title = "Comparaison descriptive selon la présence d'un EML",
+    subtitle = "Activité et performance économique"
+  )
+
+gtsave(tab_stats_eml, file.path(output_path, "tables_pretty", "bivarie", "B05_comparaison_eml.html"))
+write.xlsx(stats_eml, file.path(output_path, "tables_pretty", "bivarie", "B05_comparaison_eml.xlsx"), overwrite = TRUE)
+write_csv(stats_eml, file.path(output_path, "tables_pretty", "bivarie", "B05_comparaison_eml.csv"))
+
+graph_box_eml <- ggplot(DATA, aes(x = factor(avec_eml), y = nombre_d_examens, fill = factor(avec_eml))) +
+  geom_boxplot(outlier.alpha = 0.35) +
+  labs(
+    title = "Distribution du nombre d'examens selon la présence d'un EML",
+    x = "Statut EML",
+    y = "Nombre d'examens",
+    fill = "EML"
+  ) +
+  scale_x_discrete(labels = c("Sans EML", "Avec EML")) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "none")
+
+ggsave(file.path(output_path, "plots", "bivarie", "B05_boxplot_eml_examens.png"),
+       graph_box_eml, width = 7, height = 5, dpi = 300)
+
+# ================================
+# C6. Comparaison descriptive grève / hors grève
+# ================================
+
+stats_greve <- DATA %>%
+  group_by(greve) %>%
+  summarise(
+    examens_moyens = mean(nombre_d_examens, na.rm = TRUE),
+    ca_moyen = mean(chiffre_daffaire, na.rm = TRUE),
+    honoraires_moyens = mean(honoraires, na.rm = TRUE),
+    n = n(),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    statut_greve = ifelse(greve == 1, "Mois de grève", "Hors grève"),
+    across(where(is.numeric), ~ round(.x, 2))
+  ) %>%
+  select(statut_greve, examens_moyens, ca_moyen, honoraires_moyens, n)
+
+tab_stats_greve <- stats_greve %>%
+  gt() %>%
+  tab_header(
+    title = "Comparaison descriptive grève / hors grève",
+    subtitle = "Activité et performance économique"
+  )
+
+gtsave(tab_stats_greve, file.path(output_path, "tables_pretty", "bivarie", "B06_comparaison_greve.html"))
+write.xlsx(stats_greve, file.path(output_path, "tables_pretty", "bivarie", "B06_comparaison_greve.xlsx"), overwrite = TRUE)
+write_csv(stats_greve, file.path(output_path, "tables_pretty", "bivarie", "B06_comparaison_greve.csv"))
+
+graph_box_greve <- ggplot(DATA, aes(x = factor(greve), y = nombre_d_examens, fill = factor(greve))) +
+  geom_boxplot(outlier.alpha = 0.35) +
+  labs(
+    title = "Distribution du nombre d'examens selon les périodes de grève",
+    x = "Statut grève",
+    y = "Nombre d'examens",
+    fill = "Grève"
+  ) +
+  scale_x_discrete(labels = c("Hors grève", "Mois de grève")) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "none")
+
+ggsave(file.path(output_path, "plots", "bivarie", "B06_boxplot_greve_examens.png"),
+       graph_box_greve, width = 7, height = 5, dpi = 300)
+
+# ================================
+# C7. Evolution mensuelle du nombre d'examens
+# ================================
+
+evol_mensuelle_examens <- DATA %>%
+  group_by(annee, mois) %>%
+  summarise(examens = sum(nombre_d_examens, na.rm = TRUE), .groups = "drop") %>%
+  mutate(
+    mois_label = factor(
+      mois,
+      levels = 1:12,
+      labels = c("Jan", "Fév", "Mar", "Avr", "Mai", "Juin",
+                 "Juil", "Août", "Sep", "Oct", "Nov", "Déc")
+    )
+  )
+
+graph_mensuel_examens <- ggplot(
+  evol_mensuelle_examens,
+  aes(x = mois_label, y = examens, group = annee, color = as.factor(annee))
+) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  labs(
+    title = "Évolution mensuelle du nombre d'examens",
+    subtitle = "Tous sites et types d'examen confondus",
+    x = "Mois",
+    y = "Nombre d'examens",
+    color = "Année"
+  ) +
+  theme_minimal(base_size = 13)
+
+ggsave(file.path(output_path, "plots", "bivarie", "B07_evolution_mensuelle_nombre_examens.png"),
+       graph_mensuel_examens, width = 9, height = 5, dpi = 300)
+
+# ================================
+# C8. Evolution mensuelle du chiffre d'affaires
+# ================================
+
+evol_mensuelle_ca <- DATA %>%
+  group_by(annee, mois) %>%
+  summarise(ca = sum(chiffre_daffaire, na.rm = TRUE), .groups = "drop") %>%
+  mutate(
+    mois_label = factor(
+      mois,
+      levels = 1:12,
+      labels = c("Jan", "Fév", "Mar", "Avr", "Mai", "Juin",
+                 "Juil", "Août", "Sep", "Oct", "Nov", "Déc")
+    )
+  )
+
+graph_mensuel_ca <- ggplot(
+  evol_mensuelle_ca,
+  aes(x = mois_label, y = ca, group = annee, color = as.factor(annee))
+) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  labs(
+    title = "Évolution mensuelle du chiffre d'affaires",
+    subtitle = "Tous sites et types d'examen confondus",
+    x = "Mois",
+    y = "Chiffre d'affaires",
+    color = "Année"
+  ) +
+  theme_minimal(base_size = 13)
+
+ggsave(file.path(output_path, "plots", "bivarie", "B08_evolution_mensuelle_chiffre_affaires.png"),
+       graph_mensuel_ca, width = 9, height = 5, dpi = 300)
+
+# ================================
+# C9. Evolution mensuelle des honoraires
+# ================================
+
+evol_mensuelle_honoraires <- DATA %>%
+  group_by(annee, mois) %>%
+  summarise(honoraires_total = sum(honoraires, na.rm = TRUE), .groups = "drop") %>%
+  mutate(
+    mois_label = factor(
+      mois,
+      levels = 1:12,
+      labels = c("Jan", "Fév", "Mar", "Avr", "Mai", "Juin",
+                 "Juil", "Août", "Sep", "Oct", "Nov", "Déc")
+    )
+  )
+
+graph_mensuel_honoraires <- ggplot(
+  evol_mensuelle_honoraires,
+  aes(x = mois_label, y = honoraires_total, group = annee, color = as.factor(annee))
+) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  labs(
+    title = "Évolution mensuelle des honoraires",
+    subtitle = "Tous sites et types d'examen confondus",
+    x = "Mois",
+    y = "Honoraires",
+    color = "Année"
+  ) +
+  theme_minimal(base_size = 13)
+
+ggsave(file.path(output_path, "plots", "bivarie", "B09_evolution_mensuelle_honoraires.png"),
+       graph_mensuel_honoraires, width = 9, height = 5, dpi = 300)
+```
+
+
+
+```{r}
+# ============================================================
+# SECTION D — ANALYSE MULTIVARIEE
+# OBJECTIF 1 : EFFET DES EML SUR LA PERFORMANCE
+# ============================================================
+
+
+# ============================================================
+# D0. PREPARATION DE LA BASE OBJECTIF 1
+# ============================================================
+
+data_obj1 <- DATA %>%
+  filter(flag_ligne_suspecte == 0) %>%
+  mutate(
+    site = as.factor(site),
+    annee = as.factor(annee),
+    mois = as.factor(mois),
+    type_dexamen = as.factor(type_dexamen),
+    groupe_eml = as.factor(groupe_eml)
+  )
+
+# Aperçu dans RStudio
+glimpse(data_obj1)
+summary(data_obj1$avec_eml)
+table(data_obj1$groupe_eml)
+```
+```{r}
+# ============================================================
+# OBJECTIF 1 — TABLEAU PROGRESSIF : EML ET NOMBRE D'EXAMENS
+# ============================================================
+
+data_obj1 <- DATA %>%
+  filter(flag_ligne_suspecte == 0) %>%
+  mutate(
+    site = as.factor(site),
+    annee = as.factor(annee),
+    type_dexamen = as.factor(type_dexamen)
+  )
+
+# Modèle 1 : simple, sans effets fixes
+m1_examens <- feols(
+  log_nombre_d_examens ~ avec_eml,
+  data = data_obj1,
+  cluster = ~ site
+)
+
+# Modèle 2 : ajout du contrôle calendrier
+m2_examens <- feols(
+  log_nombre_d_examens ~ avec_eml + jours_douverture,
+  data = data_obj1,
+  cluster = ~ site
+)
+
+# Modèle 3 : effets fixes site + année
+m3_examens <- feols(
+  log_nombre_d_examens ~ avec_eml + jours_douverture |
+    site + annee,
+  data = data_obj1,
+  cluster = ~ site
+)
+
+# Modèle 4 : hétérogénéité selon type d'examen
+m4_examens <- feols(
+  log_nombre_d_examens ~ avec_eml * type_dexamen + jours_douverture |
+    site + annee,
+  data = data_obj1,
+  cluster = ~ site
+)
+
+# Aperçus dans RStudio
+summary(m1_examens)
+summary(m2_examens)
+summary(m3_examens)
+summary(m4_examens)
+
+# Tableau final HTML
+modelsummary(
+  list(
+    "1" = m1_examens,
+    "2" = m2_examens,
+    "3" = m3_examens,
+    "4" = m4_examens
+  ),
+  stars = TRUE,
+  statistic = "({std.error})",
+  coef_map = c(
+    "avec_eml" = "EML",
+    "jours_douverture" = "Jours d'ouverture",
+    "type_dexamenConventionnel" = "Type conventionnel",
+    "avec_eml:type_dexamenConventionnel" = "EML × Conventionnel"
+  ),
+  gof_map = tribble(
+    ~raw, ~clean, ~fmt,
+    "nobs", "Observations", 0,
+    "r.squared", "R-Squared", 3,
+    "within.r.squared", "Within R2", 3
+  ),
+  add_rows = data.frame(
+  term = c(
+    "Effets fixes site",
+    "Effets fixes année",
+    "Interaction EML × type d'examen"
+  ),
+  `1` = c("No", "No", "No"),
+  `2` = c("No", "No", "No"),
+  `3` = c("Yes", "Yes", "No"),
+  `4` = c("Yes", "Yes", "Yes")
+),
+  title = "Objectif 1 — Effet des EML sur le nombre d'examens",
+  output = file.path(
+    output_path,
+    "tables_pretty",
+    "multivarie",
+    "M01_objectif_1_eml_nombre_examens_tableau_progressif.html"
+  )
+)
+```
+
+
+```{r}
+# ============================================================
+# OBJECTIF 1 — EML ET CHIFFRE D'AFFAIRES
+# ============================================================
+
+# Modèle 1 : simple
+m1_ca <- feols(
+  log_chiffre_daffaire ~ avec_eml,
+  data = data_obj1,
+  cluster = ~ site
+)
+
+# Modèle 2 : ajout jours d'ouverture
+m2_ca <- feols(
+  log_chiffre_daffaire ~ avec_eml + jours_douverture,
+  data = data_obj1,
+  cluster = ~ site
+)
+
+# Modèle 3 : effets fixes site + année
+m3_ca <- feols(
+  log_chiffre_daffaire ~ avec_eml + jours_douverture |
+    site + annee,
+  data = data_obj1,
+  cluster = ~ site
+)
+
+# Modèle 4 : interaction type d'examen
+m4_ca <- feols(
+  log_chiffre_daffaire ~ avec_eml * type_dexamen + jours_douverture |
+    site + annee,
+  data = data_obj1,
+  cluster = ~ site
+)
+
+# Aperçus dans RStudio
+summary(m1_ca)
+summary(m2_ca)
+summary(m3_ca)
+summary(m4_ca)
+
+modelsummary(
+  list(
+    "1" = m1_ca,
+    "2" = m2_ca,
+    "3" = m3_ca,
+    "4" = m4_ca
+  ),
+  stars = TRUE,
+  statistic = "({std.error})",
+  coef_map = c(
+    "avec_eml" = "EML",
+    "jours_douverture" = "Jours d'ouverture",
+    "type_dexamenConventionnel" = "Type conventionnel",
+    "avec_eml:type_dexamenConventionnel" = "EML × Conventionnel"
+  ),
+  gof_map = tribble(
+    ~raw, ~clean, ~fmt,
+    "nobs", "Observations", 0,
+    "r.squared", "R-Squared", 3
+  ),
+  add_rows = data.frame(
+    term = c(
+      "Effets fixes site",
+      "Effets fixes année",
+      "Interaction EML × type d'examen"
+    ),
+    `1` = c("No", "No", "No"),
+    `2` = c("No", "No", "No"),
+    `3` = c("Yes", "Yes", "No"),
+    `4` = c("Yes", "Yes", "Yes")
+  ),
+  title = "Objectif 1 — Effet des EML sur le chiffre d'affaires",
+  output = file.path(
+    output_path,
+    "tables_pretty",
+    "multivarie",
+    "M02_objectif_1_eml_chiffre_affaires.html"
+  )
+)
+```
+
+```{r}
+# ============================================================
+# OBJECTIF 1 — EML ET HONORAIRES
+# ============================================================
+
+# Modèle 1 : simple
+m1_hono <- feols(
+  log_honoraires ~ avec_eml,
+  data = data_obj1,
+  cluster = ~ site
+)
+
+# Modèle 2 : ajout jours d'ouverture
+m2_hono <- feols(
+  log_honoraires ~ avec_eml + jours_douverture,
+  data = data_obj1,
+  cluster = ~ site
+)
+
+# Modèle 3 : effets fixes site + année
+m3_hono <- feols(
+  log_honoraires ~ avec_eml + jours_douverture |
+    site + annee,
+  data = data_obj1,
+  cluster = ~ site
+)
+
+# Modèle 4 : interaction type d'examen
+m4_hono <- feols(
+  log_honoraires ~ avec_eml * type_dexamen + jours_douverture |
+    site + annee,
+  data = data_obj1,
+  cluster = ~ site
+)
+
+# Aperçus dans RStudio
+summary(m1_hono)
+summary(m2_hono)
+summary(m3_hono)
+summary(m4_hono)
+
+modelsummary(
+  list(
+    "1" = m1_hono,
+    "2" = m2_hono,
+    "3" = m3_hono,
+    "4" = m4_hono
+  ),
+  stars = TRUE,
+  statistic = "({std.error})",
+  coef_map = c(
+    "avec_eml" = "EML",
+    "jours_douverture" = "Jours d'ouverture",
+    "type_dexamenConventionnel" = "Type conventionnel",
+    "avec_eml:type_dexamenConventionnel" = "EML × Conventionnel"
+  ),
+  gof_map = tribble(
+    ~raw, ~clean, ~fmt,
+    "nobs", "Observations", 0,
+    "r.squared", "R-Squared", 3
+  ),
+  add_rows = data.frame(
+    term = c(
+      "Effets fixes site",
+      "Effets fixes année",
+      "Interaction EML × type d'examen"
+    ),
+    `1` = c("No", "No", "No"),
+    `2` = c("No", "No", "No"),
+    `3` = c("Yes", "Yes", "No"),
+    `4` = c("Yes", "Yes", "Yes")
+  ),
+  title = "Objectif 1 — Effet des EML sur les honoraires",
+  output = file.path(
+    output_path,
+    "tables_pretty",
+    "multivarie",
+    "M03_objectif_1_eml_honoraires.html"
+  )
+)
+```
+
+
+```{r}
+# ============================================================
+# OBJECTIF 1 — STRUCTURE DE L'ACTIVITE (COUPE)
+# ============================================================
+
+# Modèle 1
+m1_structure <- feols(
+  type_coupe ~ avec_eml,
+  data = data_obj1,
+  cluster = ~ site
+)
+
+# Modèle 2
+m2_structure <- feols(
+  type_coupe ~ avec_eml + jours_douverture,
+  data = data_obj1,
+  cluster = ~ site
+)
+
+# Modèle 3 (principal)
+m3_structure <- feols(
+  type_coupe ~ avec_eml + jours_douverture |
+    site + annee,
+  data = data_obj1,
+  cluster = ~ site
+)
+
+# Modèle 4
+m4_structure <- feols(
+  type_coupe ~ avec_eml + jours_douverture + greve |
+    site + annee,
+  data = data_obj1,
+  cluster = ~ site
+)
+
+# Tableau final
+modelsummary(
+  list(
+    "1" = m1_structure,
+    "2" = m2_structure,
+    "3" = m3_structure,
+    "4" = m4_structure
+  ),
+  stars = TRUE,
+  statistic = "({std.error})",
+  coef_map = c(
+    "avec_eml" = "EML",
+    "jours_douverture" = "Jours d'ouverture",
+    "greve" = "Grève"
+  ),
+  gof_map = tribble(
+    ~raw, ~clean, ~fmt,
+    "nobs", "Observations", 0,
+    "r.squared", "R-Squared", 3
+  ),
+  add_rows = data.frame(
+    term = c(
+      "Effets fixes site",
+      "Effets fixes année"
+    ),
+    `1` = c("No", "No"),
+    `2` = c("No", "No"),
+    `3` = c("Yes", "Yes"),
+    `4` = c("Yes", "Yes")
+  ),
+  title = "Objectif 1 — Effet des EML sur la structure de l’activité (examens de coupe)",
+  output = file.path(
+    output_path,
+    "tables_pretty",
+    "multivarie",
+    "M04_objectif_1_structure.html"
+  )
+)
+```
+
+
+
+```{r}
+# ============================================================
+# OBJECTIF 2 — TABLEAU 1 : GREVE ET NOMBRE D'EXAMENS
+# Même logique que Objectif 1
+# Hypothèse testée : H1
+# H1 : les mouvements de grève réduisent le volume d'examens réalisés.
+# ============================================================
+
+# ============================================================
+# PREPARATION OBJECTIF 2
+# ============================================================
+
+data_obj2 <- DATA %>%
+  filter(flag_ligne_suspecte == 0) %>%
+  mutate(
+    site = as.factor(site),
+    annee = as.factor(annee),
+    mois = as.factor(mois),
+    type_dexamen = as.factor(type_dexamen)
+  )
+
+summary(data_obj2$greve)
+table(data_obj2$greve)
+```
+
+
+
+```{r}
+# ------------------------------------------------------------
+# Modèle 1 : modèle simple sans effet fixe
+# ------------------------------------------------------------
+
+m1_greve_examens <- feols(
+  log_nombre_d_examens ~ greve,
+  data = data_obj2,
+  cluster = ~ site
+)
+
+# ------------------------------------------------------------
+# Modèle 2 : ajout du contrôle jours d'ouverture
+# ------------------------------------------------------------
+
+m2_greve_examens <- feols(
+  log_nombre_d_examens ~ greve + jours_douverture,
+  data = data_obj2,
+  cluster = ~ site
+)
+
+# ------------------------------------------------------------
+# Modèle 3 : effets fixes site + année
+# ------------------------------------------------------------
+
+m3_greve_examens <- feols(
+  log_nombre_d_examens ~ greve + jours_douverture |
+    site + annee,
+  data = data_obj2,
+  cluster = ~ site
+)
+
+# ------------------------------------------------------------
+# Modèle 4 : interaction grève × type d'examen
+# ------------------------------------------------------------
+
+m4_greve_examens <- feols(
+  log_nombre_d_examens ~ greve * type_dexamen + jours_douverture |
+    site + annee,
+  data = data_obj2,
+  cluster = ~ site
+)
+
+# ------------------------------------------------------------
+# Aperçus dans RStudio
+# ------------------------------------------------------------
+
+summary(m1_greve_examens)
+summary(m2_greve_examens)
+summary(m3_greve_examens)
+summary(m4_greve_examens)
+
+# ------------------------------------------------------------
+# Tableau HTML final — même structure que Objectif 1
+# ------------------------------------------------------------
+
+modelsummary(
+  list(
+    "1" = m1_greve_examens,
+    "2" = m2_greve_examens,
+    "3" = m3_greve_examens,
+    "4" = m4_greve_examens
+  ),
+  stars = TRUE,
+  statistic = "({std.error})",
+  coef_map = c(
+    "greve" = "Grève",
+    "jours_douverture" = "Jours d'ouverture",
+    "type_dexamenConventionnel" = "Type conventionnel",
+    "type_dexamenCoupe" = "Type coupe",
+    "greve:type_dexamenConventionnel" = "Grève × Conventionnel",
+    "greve:type_dexamenCoupe" = "Grève × Coupe"
+  ),
+  gof_map = tribble(
+    ~raw, ~clean, ~fmt,
+    "nobs", "Observations", 0,
+    "r.squared", "R-Squared", 3
+  ),
+  add_rows = data.frame(
+    term = c(
+      "Effets fixes site",
+      "Effets fixes année",
+      "Interaction Grève × type d'examen"
+    ),
+    `1` = c("No", "No", "No"),
+    `2` = c("No", "No", "No"),
+    `3` = c("Yes", "Yes", "No"),
+    `4` = c("Yes", "Yes", "Yes")
+  ),
+  title = "Objectif 2 — Effet des grèves sur le nombre d'examens",
+  output = file.path(
+    output_path,
+    "tables_pretty",
+    "multivarie",
+    "M05_objectif_2_greve_nombre_examens_tableau_progressif.html"
+  )
+)
+```
+
+```{r}
+# ============================================================
+# OBJECTIF 2 — TABLEAU 2 : GREVE ET CHIFFRE D'AFFAIRES
+# Hypothèse testée : H2
+# ============================================================
+
+# ------------------------------------------------------------
+# Modèle 1 : simple
+# ------------------------------------------------------------
+
+m1_greve_ca <- feols(
+  log_chiffre_daffaire ~ greve,
+  data = data_obj2,
+  cluster = ~ site
+)
+
+# ------------------------------------------------------------
+# Modèle 2 : contrôle jours ouverture
+# ------------------------------------------------------------
+
+m2_greve_ca <- feols(
+  log_chiffre_daffaire ~ greve + jours_douverture,
+  data = data_obj2,
+  cluster = ~ site
+)
+
+# ------------------------------------------------------------
+# Modèle 3 : effets fixes
+# ------------------------------------------------------------
+
+m3_greve_ca <- feols(
+  log_chiffre_daffaire ~ greve + jours_douverture |
+    site + annee,
+  data = data_obj2,
+  cluster = ~ site
+)
+
+# ------------------------------------------------------------
+# Modèle 4 : interaction type d'examen
+# ------------------------------------------------------------
+
+m4_greve_ca <- feols(
+  log_chiffre_daffaire ~ greve * type_dexamen + jours_douverture |
+    site + annee,
+  data = data_obj2,
+  cluster = ~ site
+)
+
+summary(m1_greve_ca)
+summary(m2_greve_ca)
+summary(m3_greve_ca)
+summary(m4_greve_ca)
+
+modelsummary(
+  list(
+    "1" = m1_greve_ca,
+    "2" = m2_greve_ca,
+    "3" = m3_greve_ca,
+    "4" = m4_greve_ca
+  ),
+  stars = TRUE,
+  statistic = "({std.error})",
+  coef_map = c(
+    "greve" = "Grève",
+    "jours_douverture" = "Jours d'ouverture",
+    "type_dexamenConventionnel" = "Type conventionnel",
+    "type_dexamenCoupe" = "Type coupe",
+    "greve:type_dexamenConventionnel" = "Grève × Conventionnel",
+    "greve:type_dexamenCoupe" = "Grève × Coupe"
+  ),
+  gof_map = tribble(
+    ~raw, ~clean, ~fmt,
+    "nobs", "Observations", 0,
+    "r.squared", "R-Squared", 3
+  ),
+  add_rows = data.frame(
+    term = c(
+      "Effets fixes site",
+      "Effets fixes année",
+      "Interaction Grève × type d'examen"
+    ),
+    `1` = c("No", "No", "No"),
+    `2` = c("No", "No", "No"),
+    `3` = c("Yes", "Yes", "No"),
+    `4` = c("Yes", "Yes", "Yes")
+  ),
+  title = "Objectif 2 — Effet des grèves sur le chiffre d'affaires",
+  output = file.path(
+    output_path,
+    "tables_pretty",
+    "multivarie",
+    "M06_objectif_2_greve_chiffre_affaires_tableau_progressif.html"
+  )
+)
+```
+
+
+
+
+
+```{r}
+# ============================================================
+# OBJECTIF 2 — TABLEAU 3 : GREVE ET HONORAIRES
+# Hypothèse testée : H2
+# H2 : les perturbations réduisent les honoraires.
+# ============================================================
+
+# ------------------------------------------------------------
+# Modèle 1 : simple
+# ------------------------------------------------------------
+
+m1_greve_hono <- feols(
+  log_honoraires ~ greve,
+  data = data_obj2,
+  cluster = ~ site
+)
+
+# ------------------------------------------------------------
+# Modèle 2 : contrôle jours d'ouverture
+# ------------------------------------------------------------
+
+m2_greve_hono <- feols(
+  log_honoraires ~ greve + jours_douverture,
+  data = data_obj2,
+  cluster = ~ site
+)
+
+# ------------------------------------------------------------
+# Modèle 3 : effets fixes site + année
+# ------------------------------------------------------------
+
+m3_greve_hono <- feols(
+  log_honoraires ~ greve + jours_douverture |
+    site + annee,
+  data = data_obj2,
+  cluster = ~ site
+)
+
+# ------------------------------------------------------------
+# Modèle 4 : interaction grève × type d'examen
+# ------------------------------------------------------------
+
+m4_greve_hono <- feols(
+  log_honoraires ~ greve * type_dexamen + jours_douverture |
+    site + annee,
+  data = data_obj2,
+  cluster = ~ site
+)
+
+# ------------------------------------------------------------
+# Aperçus dans RStudio
+# ------------------------------------------------------------
+
+summary(m1_greve_hono)
+summary(m2_greve_hono)
+summary(m3_greve_hono)
+summary(m4_greve_hono)
+
+# ------------------------------------------------------------
+# Tableau HTML final
+# ------------------------------------------------------------
+
+modelsummary(
+  list(
+    "1" = m1_greve_hono,
+    "2" = m2_greve_hono,
+    "3" = m3_greve_hono,
+    "4" = m4_greve_hono
+  ),
+  stars = TRUE,
+  statistic = "({std.error})",
+  coef_map = c(
+    "greve" = "Grève",
+    "jours_douverture" = "Jours d'ouverture",
+    "type_dexamenConventionnel" = "Type conventionnel",
+    "type_dexamenCoupe" = "Type coupe",
+    "greve:type_dexamenConventionnel" = "Grève × Conventionnel",
+    "greve:type_dexamenCoupe" = "Grève × Coupe"
+  ),
+  gof_map = tribble(
+    ~raw, ~clean, ~fmt,
+    "nobs", "Observations", 0,
+    "r.squared", "R-Squared", 3
+  ),
+  add_rows = data.frame(
+    term = c(
+      "Effets fixes site",
+      "Effets fixes année",
+      "Interaction Grève × type d'examen"
+    ),
+    `1` = c("No", "No", "No"),
+    `2` = c("No", "No", "No"),
+    `3` = c("Yes", "Yes", "No"),
+    `4` = c("Yes", "Yes", "Yes")
+  ),
+  title = "Objectif 2 — Effet des grèves sur les honoraires",
+  output = file.path(
+    output_path,
+    "tables_pretty",
+    "multivarie",
+    "M07_objectif_2_greve_honoraires_tableau_progressif.html"
+  )
+)
+```
+
+```{r}
+# ============================================================
+# PREPARATION EVENT STUDY — GREVE
+# ============================================================
+
+data_event <- data_obj2 %>%
+  mutate(
+    temps_relatif = distance_greve
+  ) %>%
+  filter(
+    !is.na(temps_relatif),
+    temps_relatif >= -12,
+    temps_relatif <= 12
+  )
+
+# Aperçu
+summary(data_event$temps_relatif)
+table(data_event$temps_relatif)
+```
+
+
+
+```{r}
+# ============================================================
+# MODELE EVENT STUDY
+# ============================================================
+
+mod_event_greve <- feols(
+  log_nombre_d_examens ~ i(temps_relatif, ref = -1) + jours_douverture |
+    site + annee,
+  data = data_event,
+  cluster = ~ site
+)
+
+# Aperçu RStudio
+summary(mod_event_greve)
+```
+
+
+
+
+```{r}
+# ============================================================
+# EXTRACTION DES COEFFICIENTS EVENT STUDY
+# ============================================================
+
+library(broom)
+
+coef_df <- broom::tidy(mod_event_greve)
+
+coef_df <- coef_df %>%
+  filter(grepl("temps_relatif::", term)) %>%
+  mutate(
+    temps = as.numeric(gsub("temps_relatif::", "", term))
+  )
+
+# Aperçu pour vérifier
+head(coef_df)
+```
+
+
+```{r}
+# ============================================================
+# GRAPHIQUE EVENT STUDY PROPRE
+# ============================================================
+
+plot_event <- ggplot(coef_df, aes(x = temps, y = estimate)) +
+  geom_point() +
+  geom_line() +
+  geom_errorbar(
+    aes(
+      ymin = estimate - 1.96 * std.error,
+      ymax = estimate + 1.96 * std.error
+    ),
+    width = 0.2
+  ) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  labs(
+    title = "Effet dynamique des grèves sur les examens",
+    x = "Mois relatif à la grève",
+    y = "Effet estimé (log examens)"
+  ) +
+  theme_minimal()
+
+# APERCU DANS RSTUDIO
+plot_event
+```
+
+```{r}
+ggsave(
+  filename = file.path(
+    output_path,
+    "graphs",
+    "M08_event_study_greve_examens.png"
+  ),
+  plot = plot_event,
+  width = 8,
+  height = 5
+)
+```
+
+
+
+```{r}
+data_obj2 <- DATA
+```
+
+
+```{r}
+summary(data_obj2$avec_eml)
+summary(data_obj2$greve)
+```
+
+
+
+```{r}
+m1_interaction <- feols(
+  log_nombre_d_examens ~ greve * avec_eml,
+  data = data_obj2,
+  cluster = ~ site
+)
+
+summary(m1_interaction)
+
+m2_interaction <- feols(
+  log_nombre_d_examens ~ greve * avec_eml + jours_douverture,
+  data = data_obj2,
+  cluster = ~ site
+)
+
+summary(m2_interaction)
+
+m3_interaction <- feols(
+  log_nombre_d_examens ~ greve * avec_eml + jours_douverture |
+    site + annee,
+  data = data_obj2,
+  cluster = ~ site
+)
+
+summary(m3_interaction)
+
+m4_interaction <- feols(
+  log_nombre_d_examens ~ greve * avec_eml * type_dexamen + jours_douverture |
+    site + annee,
+  data = data_obj2,
+  cluster = ~ site
+)
+
+summary(m4_interaction)
+
+modelsummary(
+  list(
+    "1" = m1_interaction,
+    "2" = m2_interaction,
+    "3" = m3_interaction,
+    "4" = m4_interaction
+  ),
+  stars = TRUE,
+  statistic = "({std.error})",
+  coef_map = c(
+    "greve" = "Grève",
+    "avec_eml" = "Avec EML",
+    "greve:avec_eml" = "Grève × EML",
+    "jours_douverture" = "Jours d'ouverture",
+    "type_dexamenConventionnel" = "Conventionnel",
+    "type_dexamenCoupe" = "Coupe"
+  ),
+  gof_map = tribble(
+    ~raw, ~clean, ~fmt,
+    "nobs", "Observations", 0,
+    "r.squared", "R-Squared", 3
+  ),
+  add_rows = data.frame(
+    term = c(
+      "Effets fixes site",
+      "Effets fixes année",
+      "Interaction Grève × EML"
+    ),
+    `1` = c("No", "No", "Yes"),
+    `2` = c("No", "No", "Yes"),
+    `3` = c("Yes", "Yes", "Yes"),
+    `4` = c("Yes", "Yes", "Yes")
+  ),
+  title = "Objectif 2 — Résilience : effet différentiel des grèves selon la présence d'un EML",
+  output = file.path(
+    output_path,
+    "tables_pretty",
+    "multivarie",
+    "M09_objectif_2_interaction_eml_greve.html"
+  )
+)
+```
+
+
+```{r}
+#============================================================
+# M10 — H1 : RESILIENCE IMMEDIATE
+#============================================================
+
+data_obj3 <- DATA
+
+m1_h1 <- feols(
+  log_nombre_d_examens ~ greve * avec_eml,
+  data = data_obj3,
+  cluster = ~ site
+)
+
+m2_h1 <- feols(
+  log_nombre_d_examens ~ greve * avec_eml + jours_douverture,
+  data = data_obj3,
+  cluster = ~ site
+)
+
+m3_h1 <- feols(
+  log_nombre_d_examens ~ greve * avec_eml + jours_douverture |
+    site + annee,
+  data = data_obj3,
+  cluster = ~ site
+)
+
+summary(m1_h1)
+summary(m2_h1)
+summary(m3_h1)
+
+modelsummary(
+  list(
+    "1" = m1_h1,
+    "2" = m2_h1,
+    "3" = m3_h1
+  ),
+  stars = TRUE,
+  statistic = "({std.error})",
+  coef_map = c(
+    "greve" = "Grève",
+    "avec_eml" = "Avec EML",
+    "greve:avec_eml" = "Grève × EML",
+    "jours_douverture" = "Jours d'ouverture"
+  ),
+  gof_map = tribble(
+    ~raw, ~clean, ~fmt,
+    "nobs", "Observations", 0,
+    "r.squared", "R-Squared", 3
+  ),
+  add_rows = data.frame(
+    term = c(
+      "Effets fixes site",
+      "Effets fixes année"
+    ),
+    `1` = c("No", "No"),
+    `2` = c("No", "No"),
+    `3` = c("Yes", "Yes")
+  ),
+  title = "Objectif 3 — H1 : Résilience immédiate (EML × Grève)",
+  output = file.path(
+    output_path,
+    "tables_pretty",
+    "multivarie",
+    "M10_objectif_3_H1_resilience_immediate.html"
+  )
+)
+```
+
+
+```{r}
+#============================================================
+# M11 — H2 : RESILIENCE DYNAMIQUE
+#============================================================
+
+data_event_eml <- DATA %>%
+  filter(
+    !is.na(distance_greve),
+    distance_greve >= -12,
+    distance_greve <= 12
+  )
+
+m_h2_event <- feols(
+  log_nombre_d_examens ~ i(distance_greve, avec_eml, ref = -1) +
+    jours_douverture |
+    site + annee,
+  data = data_event_eml,
+  cluster = ~ site
+)
+
+summary(m_h2_event)
+
+coef_h2_event <- broom::tidy(m_h2_event, conf.int = TRUE) %>%
+  filter(grepl("distance_greve::", term)) %>%
+  mutate(
+    periode = as.numeric(gsub(".*distance_greve::(-?[0-9]+).*", "\\1", term))
+  ) %>%
+  arrange(periode)
+
+plot_h2_event <- ggplot(
+  coef_h2_event,
+  aes(x = periode, y = estimate)
+) +
+  geom_hline(yintercept = 0, linetype = "dotted") +
+  geom_vline(xintercept = -1, linetype = "dashed") +
+  geom_point(size = 2) +
+  geom_line(linewidth = 0.8) +
+  geom_errorbar(
+    aes(ymin = conf.low, ymax = conf.high),
+    width = 0.2
+  ) +
+  labs(
+    title = "Objectif 3 — H2 : Résilience dynamique",
+    x = "Temps relatif à la grève",
+    y = "Effet différentiel estimé"
+  ) +
+  theme_minimal(base_size = 13)
+
+plot_h2_event
+
+ggsave(
+  filename = file.path(
+    output_path,
+    "graphs",
+    "M11_event_study_resilience_eml.png"
+  ),
+  plot = plot_h2_event,
+  width = 8,
+  height = 5,
+  dpi = 300
+)
+
+modelsummary(
+  list(
+    "Event study" = m_h2_event
+  ),
+  stars = TRUE,
+  statistic = "({std.error})",
+  gof_map = tribble(
+    ~raw, ~clean, ~fmt,
+    "nobs", "Observations", 0,
+    "r.squared", "R-Squared", 3
+  ),
+  add_rows = data.frame(
+    term = c(
+      "Effets fixes site",
+      "Effets fixes année"
+    ),
+    `Event study` = c("Yes", "Yes")
+  ),
+  title = "Objectif 3 — H2 : Résilience dynamique",
+  output = file.path(
+    output_path,
+    "tables_pretty",
+    "multivarie",
+    "M11_objectif_3_H2_resilience_dynamique.html"
+  )
+)
+```
+
+
+
+
+```{r}
+#============================================================
+# M12 — H3 : HETEROGENEITE
+#============================================================
+
+m1_h3 <- feols(
+  log_nombre_d_examens ~ greve * avec_eml * type_dexamen,
+  data = DATA,
+  cluster = ~ site
+)
+
+m2_h3 <- feols(
+  log_nombre_d_examens ~ greve * avec_eml * type_dexamen +
+    jours_douverture,
+  data = DATA,
+  cluster = ~ site
+)
+
+m3_h3 <- feols(
+  log_nombre_d_examens ~ greve * avec_eml * type_dexamen +
+    jours_douverture |
+    site + annee,
+  data = DATA,
+  cluster = ~ site
+)
+
+summary(m1_h3)
+summary(m2_h3)
+summary(m3_h3)
+
+modelsummary(
+  list(
+    "1" = m1_h3,
+    "2" = m2_h3,
+    "3" = m3_h3
+  ),
+  stars = TRUE,
+  statistic = "({std.error})",
+  coef_map = c(
+    "greve" = "Grève",
+    "avec_eml" = "Avec EML",
+    "type_dexamenCoupe" = "Type coupe",
+    "greve:avec_eml" = "Grève × EML",
+    "greve:type_dexamenCoupe" = "Grève × Coupe",
+    "avec_eml:type_dexamenCoupe" = "EML × Coupe",
+    "greve:avec_eml:type_dexamenCoupe" = "Triple interaction (coupe)"
+  ),
+  gof_map = tribble(
+    ~raw, ~clean, ~fmt,
+    "nobs", "Observations", 0,
+    "r.squared", "R-Squared", 3
+  ),
+  add_rows = data.frame(
+    term = c(
+      "Effets fixes site",
+      "Effets fixes année"
+    ),
+    `1` = c("No", "No"),
+    `2` = c("No", "No"),
+    `3` = c("Yes", "Yes")
+  ),
+  title = "Objectif 3 — H3 : Effet différentiel selon type d'examen",
+  output = file.path(
+    output_path,
+    "tables_pretty",
+    "multivarie",
+    "M12_objectif_3_H3_triple_diff.html"
+  )
+)
+
+```
+
+
+
+
+
+```{r}
+#TEST DE ROBUSTESSES
+```
+
+
+```{r}
+# ============================================================
+# 3.1.1 TENDANCES PARALLELES — OBJECTIF 1 : EML
+# ============================================================
+# Traitement testé :
+# Mise en service d'un équipement médical lourd.
+#
+# Variable dépendante :
+# log_nombre_d_examens
+# ============================================================
+
+library(broom)
+library(ggplot2)
+library(dplyr)
+library(fixest)
+library(modelsummary)
+
+# ------------------------------------------------------------
+# Etape 1 : préparation de la base event study EML
+# ------------------------------------------------------------
+
+DATA_eml_event <- DATA %>%
+  filter(site_equipe_en_cours == 1) %>%
+  mutate(
+    temps_relatif_eml =
+      (as.numeric(annee) - year(premiere_date_eml)) * 12 +
+      (as.numeric(mois) - month(premiere_date_eml))
+  ) %>%
+  filter(
+    temps_relatif_eml >= -6,
+    temps_relatif_eml <= 6
+  )
+
+# Aperçus dans RStudio
+table(DATA_eml_event$temps_relatif_eml)
+summary(DATA_eml_event$temps_relatif_eml)
+```
+
+
+```{r}
+# ------------------------------------------------------------
+# Etape 2 : estimation du modèle event study EML
+# ------------------------------------------------------------
+
+mod_event_eml <- feols(
+  log_nombre_d_examens ~ i(temps_relatif_eml, ref = -1) + jours_douverture |
+    site + annee,
+  cluster = ~ site,
+  data = DATA_eml_event
+)
+
+# Aperçu dans RStudio
+summary(mod_event_eml)
+
+# ------------------------------------------------------------
+# Etape 3 : extraction propre des coefficients
+# ------------------------------------------------------------
+
+plot_event_eml_data <- broom::tidy(mod_event_eml, conf.int = TRUE) %>%
+  filter(grepl("temps_relatif_eml::", term)) %>%
+  mutate(
+    periode = as.numeric(gsub(".*::", "", term))
+  ) %>%
+  arrange(periode)
+
+# Aperçu dans RStudio
+print(plot_event_eml_data)
+
+# ------------------------------------------------------------
+# Etape 4 : graphique des tendances parallèles EML
+# ------------------------------------------------------------
+
+plot_event_eml <- ggplot(
+  plot_event_eml_data,
+  aes(x = periode, y = estimate)
+) +
+  geom_hline(yintercept = 0, linetype = "dotted") +
+  geom_vline(xintercept = -1, linetype = "dashed") +
+  geom_point(size = 2) +
+  geom_line(linewidth = 0.8) +
+  geom_errorbar(
+    aes(ymin = conf.low, ymax = conf.high),
+    width = 0.2
+  ) +
+  labs(
+    title = "Test des tendances parallèles — EML",
+    subtitle = "Fenêtre de 6 mois avant et 6 mois après la mise en service",
+    x = "Mois relatif à la mise en service de l'EML",
+    y = "Effet estimé sur le log du nombre d'examens"
+  ) +
+  theme_minimal(base_size = 13)
+
+# Aperçu dans RStudio
+plot_event_eml
+```
+
+
+```{r}
+# ------------------------------------------------------------
+# Etape 5 : sauvegarde du graphique EML
+# ------------------------------------------------------------
+
+ggsave(
+  filename = file.path(
+    output_path,
+    "plots",
+    "multivarie",
+    "R01_3_1_tendances_paralleles_EML.png"
+  ),
+  plot = plot_event_eml,
+  width = 9,
+  height = 5,
+  dpi = 300
+)
+
+# ------------------------------------------------------------
+# Etape 6 : sauvegarde du tableau HTML EML
+# ------------------------------------------------------------
+
+modelsummary(
+  list("Event study EML" = mod_event_eml),
+  stars = TRUE,
+  statistic = "({std.error})",
+  gof_map = tribble(
+    ~raw, ~clean, ~fmt,
+    "nobs", "Observations", 0,
+    "r.squared", "R-Squared", 3
+  ),
+  add_rows = data.frame(
+    term = c(
+      "Effets fixes site",
+      "Effets fixes année"
+    ),
+    `Event study EML` = c("Yes", "Yes")
+  ),
+  title = "Test des tendances parallèles — EML",
+  output = file.path(
+    output_path,
+    "tables_pretty",
+    "multivarie",
+    "R01_3_1_tendances_paralleles_EML.html"
+  )
+)
+```
+
+
+```{r}
+# ============================================================
+# 3.1.2 TENDANCES PARALLELES — OBJECTIF 2 : GREVE
+# ============================================================
+# Traitement testé :
+# Mois de grève.
+#
+# Variable dépendante :
+# log_nombre_d_examens
+# ============================================================
+
+# ------------------------------------------------------------
+# Etape 1 : préparation de la base event study grève
+# ------------------------------------------------------------
+
+DATA_greve_event <- DATA %>%
+  filter(
+    !is.na(distance_greve),
+    distance_greve >= -6,
+    distance_greve <= 6
+  )
+
+# Aperçus dans RStudio
+table(DATA_greve_event$distance_greve)
+summary(DATA_greve_event$distance_greve)
+
+# ------------------------------------------------------------
+# Etape 2 : estimation du modèle event study grève
+# ------------------------------------------------------------
+
+mod_event_greve <- feols(
+  log_nombre_d_examens ~ i(distance_greve, ref = -1) + jours_douverture |
+    site + annee,
+  cluster = ~ site,
+  data = DATA_greve_event
+)
+
+# Aperçu dans RStudio
+summary(mod_event_greve)
+
+# ------------------------------------------------------------
+# Etape 3 : extraction propre des coefficients
+# ------------------------------------------------------------
+
+plot_event_greve_data <- broom::tidy(mod_event_greve, conf.int = TRUE) %>%
+  filter(grepl("distance_greve::", term)) %>%
+  mutate(
+    periode = as.numeric(gsub(".*::", "", term))
+  ) %>%
+  arrange(periode)
+
+# Aperçu dans RStudio
+print(plot_event_greve_data)
+
+# ------------------------------------------------------------
+# Etape 4 : graphique des tendances parallèles grève
+# ------------------------------------------------------------
+
+plot_event_greve <- ggplot(
+  plot_event_greve_data,
+  aes(x = periode, y = estimate)
+) +
+  geom_hline(yintercept = 0, linetype = "dotted") +
+  geom_vline(xintercept = -1, linetype = "dashed") +
+  geom_point(size = 2) +
+  geom_line(linewidth = 0.8) +
+  geom_errorbar(
+    aes(ymin = conf.low, ymax = conf.high),
+    width = 0.2
+  ) +
+  labs(
+    title = "Test des tendances parallèles — Grève",
+    subtitle = "Fenêtre de 6 mois avant et 6 mois après le choc",
+    x = "Mois relatif à la grève",
+    y = "Effet estimé sur le log du nombre d'examens"
+  ) +
+  theme_minimal(base_size = 13)
+
+# Aperçu dans RStudio
+plot_event_greve
+```
+
+
+```{r}
+# ------------------------------------------------------------
+# Etape 5 : sauvegarde du graphique grève
+# ------------------------------------------------------------
+
+ggsave(
+  filename = file.path(
+    output_path,
+    "plots",
+    "multivarie",
+    "R02_3_1_tendances_paralleles_GREVE.png"
+  ),
+  plot = plot_event_greve,
+  width = 9,
+  height = 5,
+  dpi = 300
+)
+
+# ------------------------------------------------------------
+# Etape 6 : sauvegarde du tableau HTML grève
+# ------------------------------------------------------------
+
+modelsummary(
+  list("Event study grève" = mod_event_greve),
+  stars = TRUE,
+  statistic = "({std.error})",
+  gof_map = tribble(
+    ~raw, ~clean, ~fmt,
+    "nobs", "Observations", 0,
+    "r.squared", "R-Squared", 3
+  ),
+  add_rows = data.frame(
+    term = c(
+      "Effets fixes site",
+      "Effets fixes année"
+    ),
+    `Event study grève` = c("Yes", "Yes")
+  ),
+  title = "Test des tendances parallèles — Grève",
+  output = file.path(
+    output_path,
+    "tables_pretty",
+    "multivarie",
+    "R02_3_1_tendances_paralleles_GREVE.html"
+  )
+)
+```
+
+
+```{r}
+# ============================================================
+# 3.1.3 TENDANCES PARALLELES — OBJECTIF 3 : EML × GREVE
+# ============================================================
+# Traitement testé :
+# Différence de trajectoire entre sites avec EML et sans EML
+# autour des périodes de grève.
+#
+# Variable dépendante :
+# log_nombre_d_examens
+# ============================================================
+
+# ------------------------------------------------------------
+# Etape 1 : préparation de la base event study interaction
+# ------------------------------------------------------------
+
+DATA_interaction_event <- DATA %>%
+  filter(
+    !is.na(distance_greve),
+    distance_greve >= -6,
+    distance_greve <= 6
+  )
+
+# Aperçus dans RStudio
+table(DATA_interaction_event$distance_greve)
+table(DATA_interaction_event$avec_eml)
+
+# ------------------------------------------------------------
+# Etape 2 : estimation du modèle event study avec interaction EML
+# ------------------------------------------------------------
+
+mod_event_interaction <- feols(
+  log_nombre_d_examens ~ i(distance_greve, avec_eml, ref = -1) + jours_douverture |
+    site + annee,
+  cluster = ~ site,
+  data = DATA_interaction_event
+)
+
+# Aperçu dans RStudio
+summary(mod_event_interaction)
+
+# ------------------------------------------------------------
+# Etape 3 : extraction propre des coefficients
+# ------------------------------------------------------------
+
+plot_event_interaction_data <- broom::tidy(mod_event_interaction, conf.int = TRUE) %>%
+  filter(grepl("distance_greve::", term)) %>%
+  mutate(
+    periode = as.numeric(gsub(".*distance_greve::(-?[0-9]+).*", "\\1", term))
+  ) %>%
+  arrange(periode)
+
+# Aperçu dans RStudio
+print(plot_event_interaction_data)
+
+# ------------------------------------------------------------
+# Etape 4 : graphique des tendances parallèles EML × grève
+# ------------------------------------------------------------
+
+plot_event_interaction <- ggplot(
+  plot_event_interaction_data,
+  aes(x = periode, y = estimate)
+) +
+  geom_hline(yintercept = 0, linetype = "dotted") +
+  geom_vline(xintercept = -1, linetype = "dashed") +
+  geom_point(size = 2) +
+  geom_line(linewidth = 0.8) +
+  geom_errorbar(
+    aes(ymin = conf.low, ymax = conf.high),
+    width = 0.2
+  ) +
+  labs(
+    title = "Test des tendances parallèles — EML × Grève",
+    subtitle = "Différence de trajectoire entre sites équipés et non équipés",
+    x = "Mois relatif à la grève",
+    y = "Effet différentiel estimé"
+  ) +
+  theme_minimal(base_size = 13)
+
+# Aperçu dans RStudio
+plot_event_interaction
+```
+
+
+```{r}
+# ------------------------------------------------------------
+# Etape 5 : sauvegarde du graphique interaction
+# ------------------------------------------------------------
+
+ggsave(
+  filename = file.path(
+    output_path,
+    "plots",
+    "multivarie",
+    "R03_3_1_tendances_paralleles_EML_GREVE.png"
+  ),
+  plot = plot_event_interaction,
+  width = 9,
+  height = 5,
+  dpi = 300
+)
+
+# ------------------------------------------------------------
+# Etape 6 : sauvegarde du tableau HTML interaction
+# ------------------------------------------------------------
+
+modelsummary(
+  list("Event study EML × grève" = mod_event_interaction),
+  stars = TRUE,
+  statistic = "({std.error})",
+  gof_map = tribble(
+    ~raw, ~clean, ~fmt,
+    "nobs", "Observations", 0,
+    "r.squared", "R-Squared", 3
+  ),
+  add_rows = data.frame(
+    term = c(
+      "Effets fixes site",
+      "Effets fixes année"
+    ),
+    `Event study EML × grève` = c("Yes", "Yes")
+  ),
+  title = "Test des tendances parallèles — EML × Grève",
+  output = file.path(
+    output_path,
+    "tables_pretty",
+    "multivarie",
+    "R03_3_1_tendances_paralleles_EML_GREVE.html"
+  )
+)
+
+cat("Section 3.1 terminée : tendances parallèles testées et sorties enregistrées.\n")
+```
+
+
+```{r}
+# ============================================================
+# 3.2 TEST PLACEBO
+# ============================================================
+# Objectif :
+# Vérifier que les effets estimés ne viennent pas d'une tendance
+# déjà présente avant le traitement.
+#
+# Principe :
+# On crée un faux traitement.
+# Si le faux traitement est significatif, le modèle est suspect.
+# Si le faux traitement n'est pas significatif, le résultat principal
+# est plus crédible.
+#
+# Sorties :
+# - Aperçus dans RStudio avec summary()
+# - Tableaux HTML enregistrés
+# ============================================================
+
+
+# ============================================================
+# 3.2.1 PLACEBO — OBJECTIF 1 : FAUX EML
+# ============================================================
+# Hypothèse vérifiée :
+# L'effet EML ne doit pas apparaître 12 mois avant la vraie mise en service.
+# ============================================================
+
+DATA_placebo_eml <- DATA %>%
+  mutate(
+    fausse_date_eml = premiere_date_eml %m-% months(12),
+    placebo_eml = ifelse(
+      !is.na(fausse_date_eml) & date >= fausse_date_eml & date < premiere_date_eml,
+      1,
+      0
+    )
+  )
+
+# Aperçu dans RStudio
+table(DATA_placebo_eml$placebo_eml)
+summary(DATA_placebo_eml$placebo_eml)
+
+# Modèle 1 : simple
+m1_placebo_eml <- feols(
+  log_nombre_d_examens ~ placebo_eml,
+  data = DATA_placebo_eml,
+  cluster = ~ site
+)
+
+# Modèle 2 : contrôle jours d'ouverture
+m2_placebo_eml <- feols(
+  log_nombre_d_examens ~ placebo_eml + jours_douverture,
+  data = DATA_placebo_eml,
+  cluster = ~ site
+)
+
+# Modèle 3 : effets fixes site + année
+m3_placebo_eml <- feols(
+  log_nombre_d_examens ~ placebo_eml + jours_douverture |
+    site + annee,
+  data = DATA_placebo_eml,
+  cluster = ~ site
+)
+
+# Aperçus dans RStudio
+summary(m1_placebo_eml)
+summary(m2_placebo_eml)
+summary(m3_placebo_eml)
+
+# Tableau HTML
+modelsummary(
+  list(
+    "1" = m1_placebo_eml,
+    "2" = m2_placebo_eml,
+    "3" = m3_placebo_eml
+  ),
+  stars = TRUE,
+  statistic = "({std.error})",
+  coef_map = c(
+    "placebo_eml" = "Faux EML",
+    "jours_douverture" = "Jours d'ouverture"
+  ),
+  gof_map = tribble(
+    ~raw, ~clean, ~fmt,
+    "nobs", "Observations", 0,
+    "r.squared", "R-Squared", 3
+  ),
+  add_rows = data.frame(
+    term = c(
+      "Effets fixes site",
+      "Effets fixes année"
+    ),
+    `1` = c("No", "No"),
+    `2` = c("No", "No"),
+    `3` = c("Yes", "Yes")
+  ),
+  title = "Test placebo — Objectif 1 : faux traitement EML",
+  output = file.path(
+    output_path,
+    "tables_pretty",
+    "multivarie",
+    "R04_3_2_placebo_faux_EML.html"
+  )
+)
+```
+
+
+```{r}
+# ============================================================
+# 3.2.2 PLACEBO — OBJECTIF 2 : FAUSSE GREVE
+# ============================================================
+# Hypothèse vérifiée :
+# Une fausse période de grève ne doit pas produire d'effet significatif.
+# ============================================================
+
+dates_fausse_greve <- as.Date(c(
+  "2023-04-01",
+  "2024-02-01",
+  "2025-04-01"
+))
+
+DATA_placebo_greve <- DATA %>%
+  mutate(
+    placebo_greve = ifelse(date %in% dates_fausse_greve, 1, 0)
+  )
+
+# Aperçu dans RStudio
+table(DATA_placebo_greve$placebo_greve)
+
+# Modèle 1 : simple
+m1_placebo_greve <- feols(
+  log_nombre_d_examens ~ placebo_greve,
+  data = DATA_placebo_greve,
+  cluster = ~ site
+)
+
+# Modèle 2 : contrôle jours d'ouverture
+m2_placebo_greve <- feols(
+  log_nombre_d_examens ~ placebo_greve + jours_douverture,
+  data = DATA_placebo_greve,
+  cluster = ~ site
+)
+
+# Modèle 3 : effets fixes site + année
+m3_placebo_greve <- feols(
+  log_nombre_d_examens ~ placebo_greve + jours_douverture |
+    site + annee,
+  data = DATA_placebo_greve,
+  cluster = ~ site
+)
+
+# Aperçus dans RStudio
+summary(m1_placebo_greve)
+summary(m2_placebo_greve)
+summary(m3_placebo_greve)
+
+# Tableau HTML
+modelsummary(
+  list(
+    "1" = m1_placebo_greve,
+    "2" = m2_placebo_greve,
+    "3" = m3_placebo_greve
+  ),
+  stars = TRUE,
+  statistic = "({std.error})",
+  coef_map = c(
+    "placebo_greve" = "Fausse grève",
+    "jours_douverture" = "Jours d'ouverture"
+  ),
+  gof_map = tribble(
+    ~raw, ~clean, ~fmt,
+    "nobs", "Observations", 0,
+    "r.squared", "R-Squared", 3
+  ),
+  add_rows = data.frame(
+    term = c(
+      "Effets fixes site",
+      "Effets fixes année"
+    ),
+    `1` = c("No", "No"),
+    `2` = c("No", "No"),
+    `3` = c("Yes", "Yes")
+  ),
+  title = "Test placebo — Objectif 2 : fausse grève",
+  output = file.path(
+    output_path,
+    "tables_pretty",
+    "multivarie",
+    "R05_3_2_placebo_fausse_GREVE.html"
+  )
+)
+```
+
+
+```{r}
+# ============================================================
+# 3.2.3 PLACEBO — OBJECTIF 3 : FAUSSE INTERACTION EML × GREVE
+# ============================================================
+# Hypothèse vérifiée :
+# Une fausse grève ne doit pas produire un effet différentiel
+# pour les sites équipés.
+# ============================================================
+
+DATA_placebo_interaction <- DATA_placebo_greve %>%
+  mutate(
+    placebo_interaction_eml_greve = placebo_greve * avec_eml
+  )
+
+# Aperçu dans RStudio
+table(DATA_placebo_interaction$placebo_interaction_eml_greve)
+
+# Modèle 1 : simple
+m1_placebo_interaction <- feols(
+  log_nombre_d_examens ~ placebo_greve * avec_eml,
+  data = DATA_placebo_interaction,
+  cluster = ~ site
+)
+
+# Modèle 2 : contrôle jours d'ouverture
+m2_placebo_interaction <- feols(
+  log_nombre_d_examens ~ placebo_greve * avec_eml + jours_douverture,
+  data = DATA_placebo_interaction,
+  cluster = ~ site
+)
+
+# Modèle 3 : effets fixes site + année
+m3_placebo_interaction <- feols(
+  log_nombre_d_examens ~ placebo_greve * avec_eml + jours_douverture |
+    site + annee,
+  data = DATA_placebo_interaction,
+  cluster = ~ site
+)
+
+# Aperçus dans RStudio
+summary(m1_placebo_interaction)
+summary(m2_placebo_interaction)
+summary(m3_placebo_interaction)
+
+# Tableau HTML
+modelsummary(
+  list(
+    "1" = m1_placebo_interaction,
+    "2" = m2_placebo_interaction,
+    "3" = m3_placebo_interaction
+  ),
+  stars = TRUE,
+  statistic = "({std.error})",
+  coef_map = c(
+    "placebo_greve" = "Fausse grève",
+    "avec_eml" = "Avec EML",
+    "placebo_greve:avec_eml" = "Fausse grève × EML",
+    "jours_douverture" = "Jours d'ouverture"
+  ),
+  gof_map = tribble(
+    ~raw, ~clean, ~fmt,
+    "nobs", "Observations", 0,
+    "r.squared", "R-Squared", 3
+  ),
+  add_rows = data.frame(
+    term = c(
+      "Effets fixes site",
+      "Effets fixes année",
+      "Interaction placebo"
+    ),
+    `1` = c("No", "No", "Yes"),
+    `2` = c("No", "No", "Yes"),
+    `3` = c("Yes", "Yes", "Yes")
+  ),
+  title = "Test placebo — Objectif 3 : fausse interaction EML × grève",
+  output = file.path(
+    output_path,
+    "tables_pretty",
+    "multivarie",
+    "R06_3_2_placebo_interaction_EML_GREVE.html"
+  )
+)
+
+cat("Section 3.2 terminée : tests placebo enregistrés.\n")
+```
+
+```{r}
+# ============================================================
+# 3.3 SENSIBILITE A LA SPECIFICATION DU MODELE
+# ============================================================
+# Objectif :
+# Vérifier que les résultats ne dépendent pas uniquement
+# du choix des effets fixes.
+#
+# Principe :
+# Pour chaque objectif, on estime trois spécifications :
+# 1. Effets fixes site uniquement
+# 2. Effets fixes site + année
+# 3. Effets fixes site + période mensuelle
+#
+# Lecture :
+# Les coefficients d'intérêt doivent garder le même signe
+# et rester relativement stables.
+#
+# Sorties :
+# - Aperçus dans RStudio avec summary()
+# - Tableaux HTML enregistrés
+# ============================================================
+
+
+# ============================================================
+# 3.3.1 OBJECTIF 1 — SENSIBILITE EML
+# Variable d'intérêt : avec_eml
+# Variable dépendante : log_nombre_d_examens
+# ============================================================
+
+# Modèle 1 : effets fixes site uniquement
+r1_eml_site <- feols(
+  log_nombre_d_examens ~ avec_eml + jours_douverture |
+    site,
+  data = DATA,
+  cluster = ~ site
+)
+
+# Modèle 2 : effets fixes site + année
+r2_eml_site_annee <- feols(
+  log_nombre_d_examens ~ avec_eml + jours_douverture |
+    site + annee,
+  data = DATA,
+  cluster = ~ site
+)
+
+# Modèle 3 : effets fixes site + période mensuelle
+r3_eml_site_periode <- feols(
+  log_nombre_d_examens ~ avec_eml + jours_douverture |
+    site + periode,
+  data = DATA,
+  cluster = ~ site
+)
+
+# Aperçus dans RStudio
+summary(r1_eml_site)
+summary(r2_eml_site_annee)
+summary(r3_eml_site_periode)
+
+# Tableau HTML
+modelsummary(
+  list(
+    "1" = r1_eml_site,
+    "2" = r2_eml_site_annee,
+    "3" = r3_eml_site_periode
+  ),
+  stars = TRUE,
+  statistic = "({std.error})",
+  coef_map = c(
+    "avec_eml" = "EML",
+    "jours_douverture" = "Jours d'ouverture"
+  ),
+  gof_map = tribble(
+    ~raw, ~clean, ~fmt,
+    "nobs", "Observations", 0,
+    "r.squared", "R-Squared", 3
+  ),
+  add_rows = data.frame(
+    term = c(
+      "Effets fixes site",
+      "Effets fixes année",
+      "Effets fixes période mensuelle"
+    ),
+    `1` = c("Yes", "No", "No"),
+    `2` = c("Yes", "Yes", "No"),
+    `3` = c("Yes", "No", "Yes")
+  ),
+  title = "Robustesse 3.3 — Objectif 1 : sensibilité des résultats EML aux effets fixes",
+  output = file.path(
+    output_path,
+    "tables_pretty",
+    "multivarie",
+    "R07_3_3_sensibilite_specification_EML.html"
+  )
+)
+```
+
+
+```{r}
+# ============================================================
+# 3.3.2 OBJECTIF 2 — SENSIBILITE GREVE
+# Variable d'intérêt : greve
+# Variable dépendante : log_nombre_d_examens
+# ============================================================
+# Correction méthodologique :
+# On ne peut pas utiliser les effets fixes "periode" ici,
+# car la variable greve varie uniquement par période.
+# Elle serait donc parfaitement collinéaire avec les effets fixes période.
+#
+# On utilise donc :
+# 1. Effets fixes site
+# 2. Effets fixes site + année
+# 3. Effets fixes site + année + mois
+# ============================================================
+
+r1_greve_site <- feols(
+  log_nombre_d_examens ~ greve + jours_douverture |
+    site,
+  data = DATA,
+  cluster = ~ site
+)
+
+r2_greve_site_annee <- feols(
+  log_nombre_d_examens ~ greve + jours_douverture |
+    site + annee,
+  data = DATA,
+  cluster = ~ site
+)
+
+r3_greve_site_annee_mois <- feols(
+  log_nombre_d_examens ~ greve + jours_douverture |
+    site + annee + mois,
+  data = DATA,
+  cluster = ~ site
+)
+
+summary(r1_greve_site)
+summary(r2_greve_site_annee)
+summary(r3_greve_site_annee_mois)
+
+modelsummary(
+  list(
+    "1" = r1_greve_site,
+    "2" = r2_greve_site_annee,
+    "3" = r3_greve_site_annee_mois
+  ),
+  stars = TRUE,
+  statistic = "({std.error})",
+  coef_map = c(
+    "greve" = "Grève",
+    "jours_douverture" = "Jours d'ouverture"
+  ),
+  gof_map = tribble(
+    ~raw, ~clean, ~fmt,
+    "nobs", "Observations", 0,
+    "r.squared", "R-Squared", 3
+  ),
+  add_rows = data.frame(
+    term = c(
+      "Effets fixes site",
+      "Effets fixes année",
+      "Effets fixes mois"
+    ),
+    `1` = c("Yes", "No", "No"),
+    `2` = c("Yes", "Yes", "No"),
+    `3` = c("Yes", "Yes", "Yes")
+  ),
+  title = "Robustesse 3.3 — Objectif 2 : sensibilité des résultats grève aux effets fixes",
+  output = file.path(
+    output_path,
+    "tables_pretty",
+    "multivarie",
+    "R08_3_3_sensibilite_specification_GREVE.html"
+  )
+)
+```
+
+
+```{r}
+# ============================================================
+# 3.3.3 OBJECTIF 3 — SENSIBILITE INTERACTION EML × GREVE
+# Variable d'intérêt : greve:avec_eml
+# Variable dépendante : log_nombre_d_examens
+# ============================================================
+
+# Modèle 1 : effets fixes site uniquement
+r1_inter_site <- feols(
+  log_nombre_d_examens ~ greve * avec_eml + jours_douverture |
+    site,
+  data = DATA,
+  cluster = ~ site
+)
+
+# Modèle 2 : effets fixes site + année
+r2_inter_site_annee <- feols(
+  log_nombre_d_examens ~ greve * avec_eml + jours_douverture |
+    site + annee,
+  data = DATA,
+  cluster = ~ site
+)
+
+# Modèle 3 : effets fixes site + période mensuelle
+r3_inter_site_periode <- feols(
+  log_nombre_d_examens ~ greve * avec_eml + jours_douverture |
+    site + periode,
+  data = DATA,
+  cluster = ~ site
+)
+
+# Aperçus dans RStudio
+summary(r1_inter_site)
+summary(r2_inter_site_annee)
+summary(r3_inter_site_periode)
+
+# Tableau HTML
+modelsummary(
+  list(
+    "1" = r1_inter_site,
+    "2" = r2_inter_site_annee,
+    "3" = r3_inter_site_periode
+  ),
+  stars = TRUE,
+  statistic = "({std.error})",
+  coef_map = c(
+    "greve" = "Grève",
+    "avec_eml" = "EML",
+    "greve:avec_eml" = "Grève × EML",
+    "jours_douverture" = "Jours d'ouverture"
+  ),
+  gof_map = tribble(
+    ~raw, ~clean, ~fmt,
+    "nobs", "Observations", 0,
+    "r.squared", "R-Squared", 3
+  ),
+  add_rows = data.frame(
+    term = c(
+      "Effets fixes site",
+      "Effets fixes année",
+      "Effets fixes période mensuelle"
+    ),
+    `1` = c("Yes", "No", "No" ),
+    `2` = c("Yes", "Yes", "No"),
+    `3` = c("Yes", "No", "Yes")
+  ),
+  title = "Robustesse 3.3 — Objectif 3 : sensibilité de l'interaction EML × grève aux effets fixes",
+  output = file.path(
+    output_path,
+    "tables_pretty",
+    "multivarie",
+    "R09_3_3_sensibilite_specification_EML_GREVE.html"
+  )
+)
+cat("Section 3.3 terminée : sensibilité aux effets fixes enregistrée.\n")
+```
+
+
+
+```{r}
+# ============================================================
+# 3.4 SENSIBILITE AU CHOIX DE LA VARIABLE DEPENDANTE
+# ============================================================
+# Objectif :
+# Vérifier que les résultats ne dépendent pas d'une seule mesure
+# de la performance.
+#
+# Principe :
+# On estime les modèles avec trois variables dépendantes :
+# 1. log_nombre_d_examens
+# 2. log_chiffre_daffaire
+# 3. log_honoraires
+#
+# Lecture :
+# Les signes des coefficients doivent rester cohérents.
+#
+# Sorties :
+# - Aperçus dans RStudio avec summary()
+# - Tableaux HTML enregistrés
+# ============================================================
+
+
+# ============================================================
+# 3.4.1 OBJECTIF 1 — EML SELON LA VARIABLE DEPENDANTE
+# Variable d'intérêt : avec_eml
+# ============================================================
+
+r1_y_eml_examens <- feols(
+  log_nombre_d_examens ~ avec_eml + jours_douverture |
+    site + annee,
+  data = DATA,
+  cluster = ~ site
+)
+
+r2_y_eml_ca <- feols(
+  log_chiffre_daffaire ~ avec_eml + jours_douverture |
+    site + annee,
+  data = DATA,
+  cluster = ~ site
+)
+
+r3_y_eml_honoraires <- feols(
+  log_honoraires ~ avec_eml + jours_douverture |
+    site + annee,
+  data = DATA,
+  cluster = ~ site
+)
+
+# Aperçus dans RStudio
+summary(r1_y_eml_examens)
+summary(r2_y_eml_ca)
+summary(r3_y_eml_honoraires)
+
+modelsummary(
+  list(
+    "Examens" = r1_y_eml_examens,
+    "Chiffre d'affaires" = r2_y_eml_ca,
+    "Honoraires" = r3_y_eml_honoraires
+  ),
+  stars = TRUE,
+  statistic = "({std.error})",
+  coef_map = c(
+    "avec_eml" = "EML",
+    "jours_douverture" = "Jours d'ouverture"
+  ),
+  gof_map = tribble(
+    ~raw, ~clean, ~fmt,
+    "nobs", "Observations", 0,
+    "r.squared", "R-Squared", 3
+  ),
+  add_rows = data.frame(
+    term = c(
+      "Effets fixes site",
+      "Effets fixes année"
+    ),
+    Examens = c("Yes", "Yes"),
+    `Chiffre d'affaires` = c("Yes", "Yes"),
+    Honoraires = c("Yes", "Yes")
+  ),
+  title = "Robustesse 3.4 — Objectif 1 : sensibilité au choix de la variable dépendante",
+  output = file.path(
+    output_path,
+    "tables_pretty",
+    "multivarie",
+    "R10_3_4_variable_dependante_EML.html"
+  )
+)
+```
+
+
+```{r}
+# ============================================================
+# 3.4.2 OBJECTIF 2 — GREVE SELON LA VARIABLE DEPENDANTE
+# Variable d'intérêt : greve
+# ============================================================
+
+r1_y_greve_examens <- feols(
+  log_nombre_d_examens ~ greve + jours_douverture |
+    site + annee,
+  data = DATA,
+  cluster = ~ site
+)
+
+r2_y_greve_ca <- feols(
+  log_chiffre_daffaire ~ greve + jours_douverture |
+    site + annee,
+  data = DATA,
+  cluster = ~ site
+)
+
+r3_y_greve_honoraires <- feols(
+  log_honoraires ~ greve + jours_douverture |
+    site + annee,
+  data = DATA,
+  cluster = ~ site
+)
+
+# Aperçus dans RStudio
+summary(r1_y_greve_examens)
+summary(r2_y_greve_ca)
+summary(r3_y_greve_honoraires)
+
+modelsummary(
+  list(
+    "Examens" = r1_y_greve_examens,
+    "Chiffre d'affaires" = r2_y_greve_ca,
+    "Honoraires" = r3_y_greve_honoraires
+  ),
+  stars = TRUE,
+  statistic = "({std.error})",
+  coef_map = c(
+    "greve" = "Grève",
+    "jours_douverture" = "Jours d'ouverture"
+  ),
+  gof_map = tribble(
+    ~raw, ~clean, ~fmt,
+    "nobs", "Observations", 0,
+    "r.squared", "R-Squared", 3
+  ),
+  add_rows = data.frame(
+    term = c(
+      "Effets fixes site",
+      "Effets fixes année"
+    ),
+    Examens = c("Yes", "Yes"),
+    `Chiffre d'affaires` = c("Yes", "Yes"),
+    Honoraires = c("Yes", "Yes")
+  ),
+  title = "Robustesse 3.4 — Objectif 2 : sensibilité au choix de la variable dépendante",
+  output = file.path(
+    output_path,
+    "tables_pretty",
+    "multivarie",
+    "R11_3_4_variable_dependante_GREVE.html"
+  )
+)
+```
+
+
+```{r}
+# ============================================================
+# 3.4.3 OBJECTIF 3 — INTERACTION EML × GREVE SELON LA VARIABLE DEPENDANTE
+# Variable d'intérêt : greve:avec_eml
+# ============================================================
+
+r1_y_inter_examens <- feols(
+  log_nombre_d_examens ~ greve * avec_eml + jours_douverture |
+    site + annee,
+  data = DATA,
+  cluster = ~ site
+)
+
+r2_y_inter_ca <- feols(
+  log_chiffre_daffaire ~ greve * avec_eml + jours_douverture |
+    site + annee,
+  data = DATA,
+  cluster = ~ site
+)
+
+r3_y_inter_honoraires <- feols(
+  log_honoraires ~ greve * avec_eml + jours_douverture |
+    site + annee,
+  data = DATA,
+  cluster = ~ site
+)
+
+# Aperçus dans RStudio
+summary(r1_y_inter_examens)
+summary(r2_y_inter_ca)
+summary(r3_y_inter_honoraires)
+
+modelsummary(
+  list(
+    "Examens" = r1_y_inter_examens,
+    "Chiffre d'affaires" = r2_y_inter_ca,
+    "Honoraires" = r3_y_inter_honoraires
+  ),
+  stars = TRUE,
+  statistic = "({std.error})",
+  coef_map = c(
+    "greve" = "Grève",
+    "avec_eml" = "EML",
+    "greve:avec_eml" = "Grève × EML",
+    "jours_douverture" = "Jours d'ouverture"
+  ),
+  gof_map = tribble(
+    ~raw, ~clean, ~fmt,
+    "nobs", "Observations", 0,
+    "r.squared", "R-Squared", 3
+  ),
+  add_rows = data.frame(
+    term = c(
+      "Effets fixes site",
+      "Effets fixes année"
+    ),
+    Examens = c("Yes", "Yes"),
+    `Chiffre d'affaires` = c("Yes", "Yes"),
+    Honoraires = c("Yes", "Yes")
+  ),
+  title = "Robustesse 3.4 — Objectif 3 : sensibilité au choix de la variable dépendante",
+  output = file.path(
+    output_path,
+    "tables_pretty",
+    "multivarie",
+    "R12_3_4_variable_dependante_EML_GREVE.html"
+  )
+)
+
+cat("Section 3.4 terminée : sensibilité aux variables dépendantes enregistrée.\n")
+```
+
+
+```{r}
+# ============================================================
+# 3.5 SENSIBILITE A LA COMPOSITION DE L'ECHANTILLON
+# ============================================================
+# Objectif :
+# Vérifier que les résultats ne dépendent pas de certains types de sites
+#
+# Littérature :
+# Goodman-Bacon (2021)
+#
+# On teste :
+# 1. Base complète
+# 2. Sans sites déjà équipés au début
+# 3. Sans sites jamais équipés
+# ============================================================
+
+
+# ============================================================
+# 3.5.1 CREATION DES SOUS-ECHANTILLONS
+# ============================================================
+
+DATA_full <- DATA
+
+DATA_sans_deja <- DATA %>%
+  filter(site_deja_equipe_debut == 0)
+
+DATA_sans_jamais <- DATA %>%
+  filter(site_jamais_equipe == 0)
+
+
+# Vérification rapide (IMPORTANT)
+cat("Base complète :", nrow(DATA_full), "\n")
+cat("Sans déjà équipés :", nrow(DATA_sans_deja), "\n")
+cat("Sans jamais équipés :", nrow(DATA_sans_jamais), "\n")
+```
+
+
+```{r}
+# ============================================================
+# 3.5.2 OBJECTIF 1 — EML
+# ============================================================
+
+r1_full <- feols(
+  log_nombre_d_examens ~ avec_eml + jours_douverture |
+    site + annee,
+  data = DATA_full,
+  cluster = ~ site
+)
+
+r1_sans_deja <- feols(
+  log_nombre_d_examens ~ avec_eml + jours_douverture |
+    site + annee,
+  data = DATA_sans_deja,
+  cluster = ~ site
+)
+
+r1_sans_jamais <- feols(
+  log_nombre_d_examens ~ avec_eml + jours_douverture |
+    site + annee,
+  data = DATA_sans_jamais,
+  cluster = ~ site
+)
+
+summary(r1_full)
+summary(r1_sans_deja)
+summary(r1_sans_jamais)
+
+modelsummary(
+  list(
+    "Base complète" = r1_full,
+    "Sans déjà équipés" = r1_sans_deja,
+    "Sans jamais équipés" = r1_sans_jamais
+  ),
+  stars = TRUE,
+  statistic = "({std.error})",
+  coef_map = c(
+    "avec_eml" = "EML",
+    "jours_douverture" = "Jours d'ouverture"
+  ),
+  gof_map = tribble(
+    ~raw, ~clean, ~fmt,
+    "nobs", "Observations", 0,
+    "r.squared", "R-Squared", 3
+  ),
+  add_rows = data.frame(
+    term = c(
+      "Effets fixes site",
+      "Effets fixes année"
+    ),
+    `Base complète` = c("Yes", "Yes"),
+    `Sans déjà équipés` = c("Yes", "Yes"),
+    `Sans jamais équipés` = c("Yes", "Yes")
+  ),
+  title = "Robustesse 3.5 — Objectif 1 : composition de l'échantillon",
+  output = file.path(
+    output_path,
+    "tables_pretty",
+    "multivarie",
+    "R13_3_5_sample_EML.html"
+  )
+)
+```
+
+
+```{r}
+# ============================================================
+# 3.5.3 OBJECTIF 2 — GREVE
+# ============================================================
+
+r2_full <- feols(
+  log_nombre_d_examens ~ greve + jours_douverture |
+    site + annee,
+  data = DATA_full,
+  cluster = ~ site
+)
+
+r2_sans_deja <- feols(
+  log_nombre_d_examens ~ greve + jours_douverture |
+    site + annee,
+  data = DATA_sans_deja,
+  cluster = ~ site
+)
+
+r2_sans_jamais <- feols(
+  log_nombre_d_examens ~ greve + jours_douverture |
+    site + annee,
+  data = DATA_sans_jamais,
+  cluster = ~ site
+)
+
+summary(r2_full)
+summary(r2_sans_deja)
+summary(r2_sans_jamais)
+
+modelsummary(
+  list(
+    "Base complète" = r2_full,
+    "Sans déjà équipés" = r2_sans_deja,
+    "Sans jamais équipés" = r2_sans_jamais
+  ),
+  stars = TRUE,
+  statistic = "({std.error})",
+  coef_map = c(
+    "greve" = "Grève",
+    "jours_douverture" = "Jours d'ouverture"
+  ),
+  gof_map = tribble(
+    ~raw, ~clean, ~fmt,
+    "nobs", "Observations", 0,
+    "r.squared", "R-Squared", 3
+  ),
+  add_rows = data.frame(
+    term = c(
+      "Effets fixes site",
+      "Effets fixes année"
+    ),
+    `Base complète` = c("Yes", "Yes"),
+    `Sans déjà équipés` = c("Yes", "Yes"),
+    `Sans jamais équipés` = c("Yes", "Yes")
+  ),
+  title = "Robustesse 3.5 — Objectif 2 : composition de l'échantillon",
+  output = file.path(
+    output_path,
+    "tables_pretty",
+    "multivarie",
+    "R14_3_5_sample_GREVE.html"
+  )
+)
+```
+
+
+```{r}
+# ============================================================
+# 3.5.4 OBJECTIF 3 — INTERACTION EML × GREVE
+# ============================================================
+
+r3_full <- feols(
+  log_nombre_d_examens ~ greve * avec_eml + jours_douverture |
+    site + annee,
+  data = DATA_full,
+  cluster = ~ site
+)
+
+r3_sans_deja <- feols(
+  log_nombre_d_examens ~ greve * avec_eml + jours_douverture |
+    site + annee,
+  data = DATA_sans_deja,
+  cluster = ~ site
+)
+
+r3_sans_jamais <- feols(
+  log_nombre_d_examens ~ greve * avec_eml + jours_douverture |
+    site + annee,
+  data = DATA_sans_jamais,
+  cluster = ~ site
+)
+
+summary(r3_full)
+summary(r3_sans_deja)
+summary(r3_sans_jamais)
+
+modelsummary(
+  list(
+    "Base complète" = r3_full,
+    "Sans déjà équipés" = r3_sans_deja,
+    "Sans jamais équipés" = r3_sans_jamais
+  ),
+  stars = TRUE,
+  statistic = "({std.error})",
+  coef_map = c(
+    "greve" = "Grève",
+    "avec_eml" = "EML",
+    "greve:avec_eml" = "Grève × EML",
+    "jours_douverture" = "Jours d'ouverture"
+  ),
+  gof_map = tribble(
+    ~raw, ~clean, ~fmt,
+    "nobs", "Observations", 0,
+    "r.squared", "R-Squared", 3
+  ),
+  add_rows = data.frame(
+    term = c(
+      "Effets fixes site",
+      "Effets fixes année"
+    ),
+    `Base complète` = c("Yes", "Yes"),
+    `Sans déjà équipés` = c("Yes", "Yes"),
+    `Sans jamais équipés` = c("Yes", "Yes")
+  ),
+  title = "Robustesse 3.5 — Objectif 3 : composition de l'échantillon",
+  output = file.path(
+    output_path,
+    "tables_pretty",
+    "multivarie",
+    "R15_3_5_sample_EML_GREVE.html"
+  )
+)
+
+cat("Section 3.5 terminée : robustesse par échantillon enregistrée.\n")
+```
+
+
+
+
+
+
+
+
+```{r}
+# ============================================================
+# SECTION A — DICTIONNAIRE FINAL DES VARIABLES DATA
+# À placer à la fin du script
+# ============================================================
+
+library(dplyr)
+library(gt)
+library(openxlsx)
+
+dictionnaire_variables <- tibble::tribble(
+  ~Variable, ~Définition, ~Utilisation,
+  
+  "id_observation", "Identifiant unique de chaque ligne.", "Suivi technique de la base.",
+  
+  "site", "Centre de radiologie observé.", "Unité principale du panel.",
+  "date", "Mois d’observation.", "Dimension temporelle du panel.",
+  "annee", "Année d’observation.", "Effets fixes annuels.",
+  "mois", "Mois de l’année.", "Contrôle de saisonnalité.",
+  "periode", "Période au format année-mois.", "Repérage temporel mensuel.",
+  
+  "type_dexamen", "Type d’activité : Coupe ou Conventionnel.", "Analyse de structure d’activité.",
+  "type_coupe", "Variable égale à 1 si le type d’examen est Coupe.", "Test de l’effet sur l’imagerie lourde.",
+  "type_conventionnel", "Variable égale à 1 si le type d’examen est Conventionnel.", "Comparaison avec l’activité conventionnelle.",
+  
+  "chiffre_daffaire", "Chiffre d’affaires mensuel du site.", "Lecture économique en niveau.",
+  "honoraires", "Honoraires mensuels du site.", "Lecture économique médicale.",
+  "nombre_d_examens", "Nombre mensuel d’examens réalisés.", "Volume d’activité.",
+  
+  "log_chiffre_daffaire", "Logarithme du chiffre d’affaires : log(x + 1).", "Variable dépendante principale.",
+  "log_honoraires", "Logarithme des honoraires : log(x + 1).", "Variable dépendante principale.",
+  "log_nombre_d_examens", "Logarithme du nombre d’examens : log(x + 1).", "Variable dépendante principale.",
+  
+  "log_ca_par_jour", "Logarithme du chiffre d’affaires par jour d’ouverture.", "Robustesse par intensité journalière.",
+  "log_honoraires_par_jour", "Logarithme des honoraires par jour d’ouverture.", "Robustesse par intensité journalière.",
+  "log_examens_par_jour", "Logarithme des examens par jour d’ouverture.", "Robustesse par intensité journalière.",
+  
+  "jours_douverture", "Nombre de jours d’ouverture du site dans le mois.", "Contrôle calendaire.",
+  
+  "avec_eml", "Variable égale à 1 si le site dispose d’un équipement médical lourd au mois observé.", "Traitement technologique principal.",
+  "groupe_eml", "Statut du site : jamais équipé, déjà équipé au début, ou équipé en cours de période.", "Identification des groupes.",
+  "premiere_date_eml", "Premier mois où le site est observé avec EML.", "Construction du traitement dynamique.",
+  "site_jamais_equipe", "Variable égale à 1 si le site n’est jamais équipé sur la période.", "Composition d’échantillon.",
+  "site_deja_equipe_debut", "Variable égale à 1 si le site est déjà équipé au début de la période.", "Composition d’échantillon.",
+  "site_equipe_en_cours", "Variable égale à 1 si le site reçoit un EML pendant la période.", "Différences-en-différences.",
+  "post_eml", "Variable égale à 1 après la mise en service de l’EML.", "Période post-traitement.",
+  "did_eml", "Interaction entre site équipé en cours de période et période post-EML.", "Variable DiD.",
+  
+  "greve", "Variable égale à 1 pendant les mois de grève.", "Choc organisationnel.",
+  "flag_mois_greve", "Variable égale à 1 pour les dates de grève identifiées.", "Repérage des chocs.",
+  "distance_greve", "Distance en mois par rapport à une période de grève.", "Event study et rattrapage.",
+  "interaction_eml_greve", "Produit entre avec_eml et greve.", "Test de résilience.",
+  
+  "panel_site_type_complet", "Indique si le couple site-type d’examen est observé sur 48 mois.", "Qualité du panel.",
+  "flag_ligne_suspecte", "Indique une observation potentiellement incohérente.", "Contrôle qualité et robustesse."
+)
+
+
+# ============================================================
+# EXPORT EXCEL AUSSI
+# ============================================================
+
+write.xlsx(
+  dictionnaire_variables,
+  file = file.path(output_path, "tables_pretty", "Dictionnaire_final_variables_DATA.xlsx"),
+  overwrite = TRUE
+)
+
+cat("Dictionnaire final enregistré en Excel.\n")
+```
+
+
